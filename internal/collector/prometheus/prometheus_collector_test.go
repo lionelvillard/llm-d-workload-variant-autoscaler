@@ -50,7 +50,7 @@ var _ = Describe("PrometheusCollector", func() {
 			CleanupInterval: 1 * time.Minute,
 			FetchInterval:   0, // Disable background fetching in tests
 		}
-		collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+		collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 
 		// Setup VariantAutoscaling
 		va = &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
@@ -146,7 +146,7 @@ var _ = Describe("PrometheusCollector", func() {
 				TTL:             100 * time.Millisecond,
 				CleanupInterval: 1 * time.Minute,
 			}
-			collector = NewPrometheusCollectorWithConfig(mockPromAPI, shortTTLConfig)
+			collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, shortTTLConfig)
 
 			// First call
 			metrics1, err := collector.AddMetricsToOptStatus(ctx, va, deployment, acceleratorCost)

@@ -295,7 +295,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 				Expect(err).NotTo(HaveOccurred(), "failed to get variantAutoscaling for deployment - ", "deployment-name: ", deploy.Name)
 
 				// Use MetricsCollector interface instead of deprecated function
-				metricsCollector := collector.NewPrometheusCollector(&testutils.MockPromAPI{})
+				metricsCollector := collector.NewPrometheusCollector(&testutils.MockPromAPI{}, k8sClient, nil)
 				metrics, err := metricsCollector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat)
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch metrics and add to Optimizer status for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				currentAllocation, err := utils.BuildAllocationFromMetrics(metrics, &updateVA, deploy, acceleratorCostValFloat)
@@ -421,7 +421,7 @@ var _ = Describe("Optimizer", Ordered, func() {
 				}
 
 				// Use MetricsCollector interface instead of deprecated function
-				metricsCollector := collector.NewPrometheusCollector(mockProm)
+				metricsCollector := collector.NewPrometheusCollector(mockProm, k8sClient, nil)
 				metrics, err := metricsCollector.AddMetricsToOptStatus(ctx, &updateVA, deploy, acceleratorCostValFloat)
 				Expect(err).NotTo(HaveOccurred(), "unable to fetch metrics and add to Optimizer status for variantAutoscaling - ", "variantAutoscaling-name: ", va.Name)
 				currentAllocation, err := utils.BuildAllocationFromMetrics(metrics, &updateVA, deploy, acceleratorCostValFloat)

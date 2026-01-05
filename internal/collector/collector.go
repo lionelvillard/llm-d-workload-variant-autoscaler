@@ -16,15 +16,9 @@ import (
 	"context"
 	"math"
 
-	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/interfaces"
-	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/utils"
-
 	"fmt"
 
-	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/discovery"
-	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	appsv1 "k8s.io/api/apps/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -37,7 +31,7 @@ type AcceleratorModelInfo = discovery.AcceleratorModelInfo
 // Future work: Implement CollectInventoryK8S and capacity-aware allocation for limited mode.
 
 // CollectInventoryK8S provides accelerator inventory using the discovery mechanism.
-func CollectInventoryK8S(ctx context.Context, r interface{}) (map[string]map[string]AcceleratorModelInfo, error) {
+func CollectInventoryK8S(ctx context.Context, r any) (map[string]map[string]AcceleratorModelInfo, error) {
 	c, ok := r.(client.Client)
 	if !ok {
 		return nil, fmt.Errorf("invalid client type: expected client.Client")
@@ -47,65 +41,6 @@ func CollectInventoryK8S(ctx context.Context, r interface{}) (map[string]map[str
 	// TODO: Make this configurable or dynamic based on environment
 	disc := &discovery.K8sWithGpuOperator{Client: c}
 	return disc.Discover(ctx)
-}
-
-type MetricKV struct {
-	Name   string
-	Labels map[string]string
-	Value  float64
-}
-
-// MetricsValidationResult contains the result of metrics availability check
-// Deprecated: Use interfaces.MetricsValidationResult instead
-type MetricsValidationResult = interfaces.MetricsValidationResult
-
-// ValidateMetricsAvailability checks if vLLM metrics are available for the given model and namespace
-// Returns a validation result with details about metric availability
-//
-// Deprecated: This function is maintained for backward compatibility.
-// New code should use MetricsCollector interface via interfaces.MetricsCollector.
-// This function delegates to PrometheusCollector for backward compatibility.
-func ValidateMetricsAvailability(ctx context.Context, promAPI promv1.API, modelName, namespace string) MetricsValidationResult {
-	// Use factory to create collector to avoid import cycle
-	pc, err := NewMetricsCollector(Config{
-		Type:    CollectorTypePrometheus,
-		PromAPI: promAPI,
-	})
-	if err != nil {
-		return MetricsValidationResult{
-			Available: false,
-			Reason:    "Error",
-			Message:   err.Error(),
-		}
-	}
-	return pc.ValidateMetricsAvailability(ctx, modelName, namespace)
-}
-
-// AddMetricsToOptStatus collects metrics for optimization and populates the Allocation status.
-//
-// Deprecated: This function is maintained for backward compatibility.
-// New code should use MetricsCollector interface via interfaces.MetricsCollector.
-// This function delegates to PrometheusCollector for backward compatibility.
-func AddMetricsToOptStatus(ctx context.Context,
-	opt *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-	deployment appsv1.Deployment,
-	acceleratorCostVal float64,
-	promAPI promv1.API) (llmdVariantAutoscalingV1alpha1.Allocation, error) {
-	// Use factory to create collector to avoid import cycle
-	pc, err := NewMetricsCollector(Config{
-		Type:    CollectorTypePrometheus,
-		PromAPI: promAPI,
-	})
-	if err != nil {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
-	}
-	// Get raw metrics from collector
-	metrics, err := pc.AddMetricsToOptStatus(ctx, opt, deployment, acceleratorCostVal)
-	if err != nil {
-		return llmdVariantAutoscalingV1alpha1.Allocation{}, err
-	}
-	// Build Allocation from metrics (using utils to avoid import cycle)
-	return utils.BuildAllocationFromMetrics(metrics, opt, deployment, acceleratorCostVal)
 }
 
 // Helper to handle if a value is NaN or infinite

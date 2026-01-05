@@ -23,7 +23,6 @@ import (
 	"strconv"
 
 	promoperator "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	yaml "gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -40,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/collector/prometheus"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/engines/common"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logging"
@@ -54,11 +54,8 @@ type VariantAutoscalingReconciler struct {
 
 	Recorder record.EventRecorder
 
-	PromAPI promv1.API
-
-	// MetricsCollector is the interface for collecting metrics from various backends
-	// Defaults to Prometheus collector, but can be swapped for other backends (e.g., EPP)
-	MetricsCollector interfaces.MetricsCollector
+	// Prometheus collector for metrics collection coming from Prometheus
+	PrometheusCollector *prometheus.PrometheusCollector
 }
 
 // +kubebuilder:rbac:groups=llmd.ai,resources=variantautoscalings,verbs=get;list;watch;create;update;patch;delete
@@ -177,7 +174,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Collect Metrics for this VA to populate Status.CurrentAlloc
 	// We reuse CollectMetricsForSaturationMode which expects a map and list
 	vaMap := make(map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling)
-	if err := CollectMetricsForSaturationMode(ctx, []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{va}, vaMap, r.Client, r.MetricsCollector); err != nil {
+	if err := CollectMetricsForSaturationMode(ctx, []llmdVariantAutoscalingV1alpha1.VariantAutoscaling{va}, vaMap, r.Client, r.PrometheusCollector); err != nil {
 		logger.Error(err, "Failed to collect metrics", "variant", va.Name)
 		// We continue to ensure decisions are applied even if metrics fail (though decision might depend on metrics)
 	}

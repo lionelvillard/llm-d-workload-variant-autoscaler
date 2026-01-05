@@ -43,7 +43,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
-	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/collector"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/collector/prometheus"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/config"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/controller"
@@ -354,32 +353,19 @@ func main() {
 		cacheConfig = nil // Use defaults
 	}
 
-	// Initialize metrics collector plugin (defaults to Prometheus)
-	metricsCollector, err := collector.NewMetricsCollector(collector.Config{
-		Type:        collector.CollectorTypePrometheus,
-		PromAPI:     promAPI,
-		CacheConfig: cacheConfig,
-	})
-	if err != nil {
-		setupLog.Error(err, "failed to create metrics collector")
-		os.Exit(1)
-	}
+	// Initialize prometheus collector with caching
+	prometheusCollector := prometheus.NewPrometheusCollectorWithConfig(promAPI, mgr.GetClient(), cacheConfig)
 
-	// Set K8sClient on the collector if it supports it (for pod discovery in saturation metrics)
-	if promCollector, ok := metricsCollector.(*prometheus.PrometheusCollector); ok {
-		promCollector.SetK8sClient(mgr.GetClient())
-
-		// Start background fetching executor using manager context
-		// This ensures the executor stops gracefully when the manager stops
-		if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
-			promCollector.StartBackgroundWorker(ctx)
-			<-ctx.Done() // Wait for context cancellation
-			return nil
-		})); err != nil {
-			setupLog.Error(err, "Failed to register background fetching executor with manager")
-		} else {
-			setupLog.Info("Registered background fetching executor with manager")
-		}
+	// Start background fetching executor using manager context
+	// This ensures the executor stops gracefully when the manager stops
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		prometheusCollector.StartBackgroundWorker(ctx)
+		<-ctx.Done() // Wait for context cancellation
+		return nil
+	})); err != nil {
+		setupLog.Error(err, "Failed to register background fetching executor with manager")
+	} else {
+		setupLog.Info("Registered background fetching executor with manager")
 	}
 
 	setupLog.Info("Metrics collector initialized successfully")
@@ -390,7 +376,7 @@ func main() {
 			mgr.GetClient(),
 			mgr.GetScheme(),
 			mgr.GetEventRecorderFor("workload-variant-autoscaler-saturation-engine"),
-			metricsCollector,
+			prometheusCollector,
 		)
 		go engine.StartOptimizeLoop(ctx)
 		return nil
@@ -415,11 +401,10 @@ func main() {
 
 	// Create the reconciler
 	reconciler := &controller.VariantAutoscalingReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		Recorder:         mgr.GetEventRecorderFor("workload-variant-autoscaler-controller-manager"),
-		PromAPI:          promAPI,
-		MetricsCollector: metricsCollector,
+		Client:              mgr.GetClient(),
+		Scheme:              mgr.GetScheme(),
+		Recorder:            mgr.GetEventRecorderFor("workload-variant-autoscaler-controller-manager"),
+		PrometheusCollector: prometheusCollector,
 	}
 
 	// Setup the controller with the manager

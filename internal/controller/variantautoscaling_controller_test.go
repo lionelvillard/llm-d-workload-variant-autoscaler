@@ -35,7 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d-incubation/workload-variant-autoscaler/api/v1alpha1"
-	collector "github.com/llm-d-incubation/workload-variant-autoscaler/internal/collector"
+	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/collector/prometheus"
 	"github.com/llm-d-incubation/workload-variant-autoscaler/internal/logging"
 	testutils "github.com/llm-d-incubation/workload-variant-autoscaler/test/utils"
 )
@@ -155,12 +155,11 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 				QueryErrors:  map[string]error{},
 			}
 			// Initialize MetricsCollector with mock Prometheus API
-			metricsCollector := collector.NewPrometheusCollector(mockPromAPI)
+			metricsCollector := prometheus.NewPrometheusCollectorWithConfig(mockPromAPI, nil, nil)
 			controllerReconciler := &VariantAutoscalingReconciler{
-				Client:           k8sClient,
-				Scheme:           k8sClient.Scheme(),
-				PromAPI:          mockPromAPI,
-				MetricsCollector: metricsCollector,
+				Client:              k8sClient,
+				Scheme:              k8sClient.Scheme(),
+				PrometheusCollector: metricsCollector,
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

@@ -56,7 +56,7 @@ var _ = Describe("Cache Operations", func() {
 				CleanupInterval: 1 * time.Minute,
 				FetchInterval:   0,
 			}
-			collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+			collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 		})
 
 		It("should invalidate cache entries for a specific variant", func() {
@@ -136,7 +136,7 @@ var _ = Describe("Cache Operations", func() {
 				CleanupInterval: 1 * time.Minute,
 				FetchInterval:   0,
 			}
-			collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+			collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 		})
 
 		It("should invalidate all cache entries for a model", func() {

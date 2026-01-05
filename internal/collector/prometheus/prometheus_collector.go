@@ -27,10 +27,7 @@ type PrometheusCollector struct {
 	promAPI promv1.API
 	cache   cache.MetricsCache // Internal cache for metrics
 
-	// k8sClient is accessed by background goroutines, so we use atomic.Value for thread-safe access
-	// We use a mutex to protect writes (SetK8sClient)
-	k8sClientMu sync.RWMutex
-	k8sClient   client.Client
+	k8sClient client.Client
 
 	// Background fetching
 	fetchInterval       time.Duration
@@ -40,20 +37,13 @@ type PrometheusCollector struct {
 	trackedModels       sync.Map          // map[string]*TrackedModel - tracks models for replica metrics background fetching
 }
 
-// NewPrometheusCollector creates a new Prometheus metrics collector with default cache config
-// Deprecated: Use NewPrometheusCollectorWithConfig instead
-func NewPrometheusCollector(promAPI promv1.API) *PrometheusCollector {
-	return NewPrometheusCollectorWithConfig(promAPI, nil)
-}
-
 // NewPrometheusCollectorWithConfig creates a new Prometheus metrics collector
 // If cacheConfig is nil, uses default cache settings
-func NewPrometheusCollectorWithConfig(promAPI promv1.API, cacheConfig *config.CacheConfig) *PrometheusCollector {
-
-	// Use provided config or defaults
-	cfg := getDefaultCacheConfig()
-	if cacheConfig != nil {
-		cfg = cacheConfig
+func NewPrometheusCollectorWithConfig(promAPI promv1.API, k8sClient client.Client, cacheConfig *config.CacheConfig) *PrometheusCollector {
+	cfg := cacheConfig
+	if cfg == nil {
+		// Use provided config or defaults
+		cfg = getDefaultCacheConfig()
 	}
 
 	var metricsCache cache.MetricsCache
@@ -93,21 +83,6 @@ func NewPrometheusCollectorWithConfig(promAPI promv1.API, cacheConfig *config.Ca
 	}
 
 	return pc
-}
-
-// SetK8sClient sets the Kubernetes client for pod ownership lookups
-// This is thread-safe and can be called concurrently with background fetching
-func (pc *PrometheusCollector) SetK8sClient(k8sClient client.Client) {
-	pc.k8sClientMu.Lock()
-	defer pc.k8sClientMu.Unlock()
-	pc.k8sClient = k8sClient
-}
-
-// getK8sClient returns the Kubernetes client in a thread-safe manner
-func (pc *PrometheusCollector) getK8sClient() client.Client {
-	pc.k8sClientMu.RLock()
-	defer pc.k8sClientMu.RUnlock()
-	return pc.k8sClient
 }
 
 // fetchOptimizerMetricsCore contains the core logic for fetching raw optimizer metrics from Prometheus
@@ -410,7 +385,7 @@ func (pc *PrometheusCollector) CollectReplicaMetrics(
 	// we maintain compatibility by using the existing struct
 	saturationCollector := &SaturationMetricsCollector{
 		promAPI:   pc.promAPI,
-		k8sClient: pc.getK8sClient(),
+		k8sClient: pc.k8sClient,
 	}
 	replicaMetrics, err := saturationCollector.CollectReplicaMetrics(ctx, modelID, namespace, deployments, variantAutoscalings, variantCosts)
 	if err != nil {

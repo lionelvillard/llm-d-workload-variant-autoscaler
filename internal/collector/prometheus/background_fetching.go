@@ -75,7 +75,7 @@ func (pc *PrometheusCollector) fetchTrackedVAs(ctx context.Context) {
 // This is called by the PollingExecutor at configured intervals
 func (pc *PrometheusCollector) fetchTrackedModels(ctx context.Context) {
 	logger := ctrl.LoggerFrom(ctx)
-	if pc.getK8sClient() == nil {
+	if pc.k8sClient == nil {
 		logger.V(logging.DEBUG).Info("Skipping replica metrics background fetch: K8s client not set")
 		return
 	}
@@ -219,8 +219,7 @@ func (pc *PrometheusCollector) buildModelMaps(ctx context.Context, modelID, name
 	variantAutoscalings = make(map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling)
 	variantCosts = make(map[string]float64)
 
-	k8sClient := pc.getK8sClient()
-	if k8sClient == nil {
+	if pc.k8sClient == nil {
 		return nil, nil, nil, fmt.Errorf("kubernetes client is not set")
 	}
 
@@ -229,7 +228,7 @@ func (pc *PrometheusCollector) buildModelMaps(ctx context.Context, modelID, name
 	listOpts := []client.ListOption{
 		client.InNamespace(namespace),
 	}
-	if err := k8sClient.List(ctx, &vaList, listOpts...); err != nil {
+	if err := pc.k8sClient.List(ctx, &vaList, listOpts...); err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to list VariantAutoscaling resources: %w", err)
 	}
 
@@ -242,7 +241,7 @@ func (pc *PrometheusCollector) buildModelMaps(ctx context.Context, modelID, name
 
 		// Get the deployment for this VA
 		var deploy appsv1.Deployment
-		if err := utils.GetDeploymentWithBackoff(ctx, k8sClient, va.GetScaleTargetName(), va.Namespace, &deploy); err != nil {
+		if err := utils.GetDeploymentWithBackoff(ctx, pc.k8sClient, va.GetScaleTargetName(), va.Namespace, &deploy); err != nil {
 			logger.V(logging.DEBUG).Info("Could not get deployment for VA in background fetch", "variant", va.Name, "deployment", va.GetScaleTargetName(), "error", err)
 			continue // Skip this VA if we can't get its deployment
 		}
@@ -279,7 +278,7 @@ func (pc *PrometheusCollector) fetchReplicaMetrics(
 	// Use the existing SaturationMetricsCollector implementation
 	saturationCollector := &SaturationMetricsCollector{
 		promAPI:   pc.promAPI,
-		k8sClient: pc.getK8sClient(),
+		k8sClient: pc.k8sClient,
 	}
 	replicaMetrics, err := saturationCollector.CollectReplicaMetrics(ctx, modelID, namespace, deployments, variantAutoscalings, variantCosts)
 	if err != nil {

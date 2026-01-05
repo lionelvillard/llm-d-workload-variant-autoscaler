@@ -292,145 +292,6 @@ var _ = Describe("Collector", func() {
 		})
 	})
 
-	Context("When adding metrics to optimization status", func() {
-		var (
-			mockProm      *utils.MockPromAPI
-			deployment    appsv1.Deployment
-			va            llmdVariantAutoscalingV1alpha1.VariantAutoscaling
-			name          string
-			modelID       string
-			testNamespace string
-			accCost       float64
-		)
-
-		BeforeEach(func() {
-			mockProm = &utils.MockPromAPI{
-				QueryResults: make(map[string]model.Value),
-				QueryErrors:  make(map[string]error),
-			}
-
-			name = "test"
-			modelID = "default/default"
-			testNamespace = "default"
-			accCost = 40.0 // sample accelerator cost
-
-			deployment = appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      name,
-					Namespace: testNamespace,
-				},
-				Spec: appsv1.DeploymentSpec{
-					Replicas: func() *int32 { r := int32(2); return &r }(),
-				},
-			}
-
-			va = llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      name,
-					Namespace: testNamespace,
-					Labels: map[string]string{
-						"inference.optimization/acceleratorName": "A100",
-					},
-				},
-				Spec: llmdVariantAutoscalingV1alpha1.VariantAutoscalingSpec{
-					ModelID: modelID,
-				},
-			}
-		})
-
-		It("should collect metrics successfully", func() {
-			// Setup mock responses
-			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			avgPromptToksQuery := utils.CreatePromptToksQuery(modelID, testNamespace)
-			avgDecToksQuery := utils.CreateDecToksQuery(modelID, testNamespace)
-			ttftQuery := utils.CreateTTFTQuery(modelID, testNamespace)
-			itlQuery := utils.CreateITLQuery(modelID, testNamespace)
-
-			mockProm.QueryResults[arrivalQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(0.175)}, // 0.175 req/sec = 10.5 req/min after * 60
-			}
-			mockProm.QueryResults[avgPromptToksQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(100.0)}, // 100 input tokens per request
-			}
-			mockProm.QueryResults[avgDecToksQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(150.0)}, // 150 output tokens per request
-			}
-			mockProm.QueryResults[ttftQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(0.5)}, // 0.5 seconds
-			}
-			mockProm.QueryResults[itlQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(0.05)}, // 0.05 seconds
-			}
-
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(allocation.Accelerator).To(Equal("A100"))
-			Expect(allocation.NumReplicas).To(Equal(2))
-			Expect(allocation.MaxBatch).To(Equal(256))
-			Expect(allocation.VariantCost).To(Equal("80.00"))           // 2 replicas * 40.0 acc cost
-			Expect(allocation.TTFTAverage).To(Equal("500.00"))          // 0.5 * 1000 ms
-			Expect(allocation.ITLAverage).To(Equal("50.00"))            // 0.05 * 1000 ms
-			Expect(allocation.Load.ArrivalRate).To(Equal("10.50"))      // req per min
-			Expect(allocation.Load.AvgInputTokens).To(Equal("100.00"))  // input tokens per req
-			Expect(allocation.Load.AvgOutputTokens).To(Equal("150.00")) // output tokens per req
-		})
-
-		It("should check missing accelerator label", func() {
-			// Remove accelerator label
-			delete(va.Labels, "inference.optimization/acceleratorName")
-
-			// Setup minimal mock responses
-			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
-
-			mockProm.QueryResults[arrivalQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(5.0)},
-			}
-			mockProm.QueryResults[tokenQuery] = model.Vector{
-				&model.Sample{Value: model.SampleValue(100.0)},
-			}
-
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
-
-			// Should fail with error due to missing accelerator label (required by CRD validation)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("missing or empty acceleratorName label"))
-			Expect(allocation).To(Equal(llmdVariantAutoscalingV1alpha1.Allocation{})) // Empty allocation on error
-		})
-
-		It("should handle Prometheus Query errors", func() {
-			// Setup error for arrival Query
-			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			mockProm.QueryErrors[arrivalQuery] = fmt.Errorf("prometheus connection failed")
-
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
-
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("prometheus connection failed"))
-			Expect(allocation).To(Equal(llmdVariantAutoscalingV1alpha1.Allocation{})) // Expect empty allocation on error
-		})
-
-		It("should handle empty metric results gracefully", func() {
-			// Setup empty responses (no data points)
-			arrivalQuery := utils.CreateArrivalQuery(modelID, testNamespace)
-			tokenQuery := utils.CreateDecToksQuery(modelID, testNamespace)
-
-			// Empty vectors (no data)
-			mockProm.QueryResults[arrivalQuery] = model.Vector{}
-			mockProm.QueryResults[tokenQuery] = model.Vector{}
-
-			allocation, err := AddMetricsToOptStatus(ctx, &va, deployment, accCost, mockProm)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(allocation.ITLAverage).To(Equal("0.00"))
-			Expect(allocation.TTFTAverage).To(Equal("0.00"))
-			Expect(allocation.Load.ArrivalRate).To(Equal("0.00"))
-			Expect(allocation.Load.AvgInputTokens).To(Equal("0.00"))
-			Expect(allocation.Load.AvgOutputTokens).To(Equal("0.00"))
-		})
-	})
-
 	Context("When testing FixValue func", func() {
 		It("should fix NaN values", func() {
 			val := math.NaN()
@@ -494,8 +355,7 @@ var _ = Describe("Collector", func() {
 					Timestamp: model.TimeFromUnixNano(time.Now().UnixNano()),
 				},
 			}
-
-			result := ValidateMetricsAvailability(ctx, mockProm, modelName, testNamespace)
+			result := NewPrometheusCollector(mockProm, nil, nil).ValidateMetricsAvailability(ctx, modelName, testNamespace)
 
 			Expect(result.Available).To(BeTrue())
 			Expect(result.Reason).To(Equal("MetricsFound"))
@@ -515,7 +375,7 @@ var _ = Describe("Collector", func() {
 				},
 			}
 
-			result := ValidateMetricsAvailability(ctx, mockProm, modelName, testNamespace)
+			result := NewPrometheusCollector(mockProm, nil, nil).ValidateMetricsAvailability(ctx, modelName, testNamespace)
 
 			Expect(result.Available).To(BeTrue())
 			Expect(result.Reason).To(Equal("MetricsFound"))
@@ -526,7 +386,7 @@ var _ = Describe("Collector", func() {
 			query := fmt.Sprintf(`%s{%s="%s",%s="%s"}`, constants.VLLMNumRequestRunning, constants.LabelModelName, modelName, constants.LabelNamespace, testNamespace)
 			mockProm.QueryErrors[query] = fmt.Errorf("prometheus connection error")
 
-			result := ValidateMetricsAvailability(ctx, mockProm, modelName, testNamespace)
+			result := NewPrometheusCollector(mockProm, nil, nil).ValidateMetricsAvailability(ctx, modelName, testNamespace)
 
 			Expect(result.Available).To(BeFalse())
 			Expect(result.Reason).To(Equal("PrometheusError"))
@@ -541,7 +401,7 @@ var _ = Describe("Collector", func() {
 			mockProm.QueryResults[queryWithNamespace] = model.Vector{}
 			mockProm.QueryResults[queryWithoutNamespace] = model.Vector{}
 
-			result := ValidateMetricsAvailability(ctx, mockProm, modelName, testNamespace)
+			result := NewPrometheusCollector(mockProm, nil, nil).ValidateMetricsAvailability(ctx, modelName, testNamespace)
 
 			Expect(result.Available).To(BeFalse())
 			Expect(result.Reason).To(Equal("MetricsMissing"))
@@ -560,7 +420,7 @@ var _ = Describe("Collector", func() {
 				},
 			}
 
-			result := ValidateMetricsAvailability(ctx, mockProm, modelName, testNamespace)
+			result := NewPrometheusCollector(mockProm, nil, nil).ValidateMetricsAvailability(ctx, modelName, testNamespace)
 
 			Expect(result.Available).To(BeFalse())
 			Expect(result.Reason).To(Equal("MetricsStale"))
@@ -575,7 +435,7 @@ var _ = Describe("Collector", func() {
 			mockProm.QueryResults[queryWithNamespace] = model.Vector{}
 			mockProm.QueryErrors[queryWithoutNamespace] = fmt.Errorf("fallback query failed")
 
-			result := ValidateMetricsAvailability(ctx, mockProm, modelName, testNamespace)
+			result := NewPrometheusCollector(mockProm, nil, nil).ValidateMetricsAvailability(ctx, modelName, testNamespace)
 
 			Expect(result.Available).To(BeFalse())
 			Expect(result.Reason).To(Equal("PrometheusError"))
@@ -593,7 +453,7 @@ var _ = Describe("Collector", func() {
 				},
 			}
 
-			result := ValidateMetricsAvailability(ctx, mockProm, modelName, testNamespace)
+			result := NewPrometheusCollector(mockProm, nil, nil).ValidateMetricsAvailability(ctx, modelName, testNamespace)
 
 			Expect(result.Available).To(BeTrue())
 			Expect(result.Reason).To(Equal("MetricsFound"))
@@ -609,24 +469,6 @@ var _ = Describe("Collector", func() {
 
 			Expect(info.Count).To(Equal(8))
 			Expect(info.Memory).To(Equal("80Gi"))
-		})
-	})
-
-	Context("When testing MetricKV struct", func() {
-		It("should create MetricKV correctly", func() {
-			metric := MetricKV{
-				Name: "test_metric",
-				Labels: map[string]string{
-					"model": "test-model",
-					"gpu":   "A100",
-				},
-				Value: 123.45,
-			}
-
-			Expect(metric.Name).To(Equal("test_metric"))
-			Expect(metric.Labels).To(HaveKeyWithValue("model", "test-model"))
-			Expect(metric.Labels).To(HaveKeyWithValue("gpu", "A100"))
-			Expect(metric.Value).To(Equal(123.45))
 		})
 	})
 

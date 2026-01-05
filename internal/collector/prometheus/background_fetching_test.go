@@ -57,7 +57,7 @@ var _ = Describe("Background Fetching", func() {
 				CleanupInterval: 1 * time.Minute,
 				FetchInterval:   1 * time.Second, // Enable background fetching
 			}
-			collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+			collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 
 			// Should not panic
 			collector.StartBackgroundWorker(ctx)
@@ -74,7 +74,7 @@ var _ = Describe("Background Fetching", func() {
 				CleanupInterval: 1 * time.Minute,
 				FetchInterval:   0, // Disable background fetching
 			}
-			collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+			collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 
 			// Should not panic and should not start
 			collector.StartBackgroundWorker(ctx)
@@ -90,7 +90,7 @@ var _ = Describe("Background Fetching", func() {
 				CleanupInterval: 1 * time.Minute,
 				FetchInterval:   1 * time.Second,
 			}
-			collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+			collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 
 			// Should not panic
 			collector.StopBackgroundWorker(ctx)
@@ -110,7 +110,7 @@ var _ = Describe("Background Fetching", func() {
 				CleanupInterval: 1 * time.Minute,
 				FetchInterval:   1 * time.Second,
 			}
-			collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+			collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 
 			va = &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				ObjectMeta: metav1.ObjectMeta{
@@ -192,7 +192,7 @@ var _ = Describe("Background Fetching", func() {
 				CleanupInterval: 1 * time.Minute,
 				FetchInterval:   1 * time.Second,
 			}
-			collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+			collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 		})
 
 		It("should skip when k8s client is not set", func() {
@@ -221,7 +221,7 @@ var _ = Describe("Background Fetching", func() {
 				CleanupInterval: 1 * time.Minute,
 				FetchInterval:   0,
 			}
-			collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+			collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 			// Ensure k8s client is nil (k8sClient is now private, but we can test via getK8sClient)
 			// Since k8sClient is nil by default, we can test directly
 

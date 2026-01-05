@@ -400,7 +400,7 @@ data:
 			}
 
 			// Initialize MetricsCollector with mock Prometheus API
-			metricsCollector := collector.NewPrometheusCollector(mockPromAPI)
+			metricsCollector := collector.NewPrometheusCollector(mockPromAPI, k8sClient, nil)
 			engine := NewEngine(k8sClient, k8sClient.Scheme(), nil, metricsCollector)
 
 			// Populate global config

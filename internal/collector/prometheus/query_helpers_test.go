@@ -37,7 +37,7 @@ var _ = Describe("Query Helpers", func() {
 			CleanupInterval: 1 * time.Minute,
 			FetchInterval:   0,
 		}
-		collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+		collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 	})
 
 	Describe("queryAndExtractMetric", func() {

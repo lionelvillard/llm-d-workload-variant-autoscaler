@@ -181,7 +181,7 @@ var _ = Describe("Tracking", func() {
 				CleanupInterval: 1 * time.Minute,
 				FetchInterval:   0, // Disable background fetching
 			}
-			collector = NewPrometheusCollectorWithConfig(mockPromAPI, testConfig)
+			collector = NewPrometheusCollectorWithConfig(mockPromAPI, nil, testConfig)
 
 			va = &llmdVariantAutoscalingV1alpha1.VariantAutoscaling{
 				ObjectMeta: metav1.ObjectMeta{
