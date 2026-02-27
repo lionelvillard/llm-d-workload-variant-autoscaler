@@ -10,7 +10,7 @@ Agentic workflows are AI-powered GitHub Actions that use natural language instru
 
 ### Update Docs
 
-**Trigger**: Automatic on every push to `main` branch  
+**Trigger**: Automatic on every push to `main` branch
 **Purpose**: Keeps documentation synchronized with code changes
 
 This workflow:
@@ -24,7 +24,7 @@ This workflow:
 
 ### Assign Docs PR to Original Author
 
-**Trigger**: Automatic when a PR is opened by `github-actions[bot]` with title starting with `docs:`  
+**Trigger**: Automatic when a PR is opened by `github-actions[bot]` with title starting with `docs:`
 **Purpose**: Assigns documentation PRs to the author of the original PR that triggered the docs update
 
 This workflow:
@@ -40,7 +40,7 @@ This ensures accountability and visibility for documentation changes, making it 
 
 ### Create Agentic Workflow
 
-**Trigger**: Manual via custom agent  
+**Trigger**: Manual via custom agent
 **Purpose**: Interactive workflow designer to create new agentic workflows
 
 This agent helps you:
@@ -53,7 +53,7 @@ This agent helps you:
 
 ### Debug Agentic Workflow
 
-**Trigger**: Manual via custom agent  
+**Trigger**: Manual via custom agent
 **Purpose**: Debug and refine existing workflows
 
 Use this agent to:
@@ -63,6 +63,36 @@ Use this agent to:
 - Troubleshoot failures
 
 **Agent file**: `.github/agents/debug-agentic-workflow.agent.md`
+
+### EPP CLI Usage Skill
+
+**Trigger**: Manual via custom agent
+**Purpose**: Configure and troubleshoot llm-d Inference Scheduler EPP CLI usage
+
+Use this skill to:
+- Build minimal, correct EPP startup flag sets
+- Handle deprecations and migrate legacy metric flags
+- Keep guidance main-branch first with v0.5.1 compatibility notes
+
+**Agent file**: `.github/agents/epp-cli-usage.agent.md`
+
+### Inference Simulator CLI Usage Skill
+
+**Trigger**: Manual via custom agent
+**Purpose**: Configure and tune `llm-d-inference-sim` CLI usage
+
+Use this skill to:
+- Generate minimal runnable simulator commands
+- Tune latency, queueing, cache, failure injection, and dataset options
+- Catch v0.7.1-to-main compatibility pitfalls and older duration-format migrations
+
+**Agent file**: `.github/agents/inference-simulator-cli-usage.agent.md`
+
+### CLI Skill Guidance Policy
+
+- CLI guidance in this repository is **main-branch first**.
+- Keep EPP v0.5.1 and inference simulator v0.7.1 details as compatibility notes for migration only.
+- Do not reintroduce exhaustive CLI flag tables in `AGENTS.md`; keep detailed decision guidance in dedicated `.github/agents/*.agent.md` skill files.
 
 ## Installing gh-aw CLI
 
@@ -144,18 +174,18 @@ gh aw compile --purge
    on:
      issues:
        types: [opened]
-   
+
    permissions:
      issues: write
-   
+
    tools:
      github:
        allowed:
          - add_issue_comment
    ---
-   
+
    # My Workflow
-   
+
    When an issue is opened, analyze it and add a helpful comment.
    ```
 
@@ -242,21 +272,21 @@ tools:
     allowed:
       - create_issue
       - add_issue_comment
-  
+
   # File operations
   edit:      # Edit files
   view:      # View files
-  
+
   # Web access
   web-fetch:  # Fetch web content
   web-search: # Search the web
-  
+
   # Shell commands (whitelist patterns)
   bash:
     - "git status"
     - "make:*"
     - "gh label:*"
-  
+
   # Browser automation
   playwright:
 ```
