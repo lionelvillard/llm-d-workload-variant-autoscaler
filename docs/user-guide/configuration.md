@@ -668,12 +668,6 @@ See:
 - [Prometheus Integration](../integrations/prometheus.md)
 - [Custom Metrics](../integrations/prometheus.md#custom-metrics)
 
-## Examples
-
-More configuration examples in:
-- [config/samples/](../../config/samples/)
-- [Tutorials](../tutorials/)
-
 ## Multi-Controller Environments
 
 When running multiple WVA controller instances in the same cluster (e.g., for parallel testing, multi-tenant setups, or canary deployments), use the **controller instance isolation** feature to prevent metric conflicts and ensure proper VA resource management.

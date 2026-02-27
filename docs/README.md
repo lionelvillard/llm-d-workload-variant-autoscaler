@@ -13,15 +13,6 @@ Getting started and using WVA:
 - **[CRD Reference](user-guide/crd-reference.md)** - Complete API reference for VariantAutoscaling
 - **[Multi-Controller Isolation](user-guide/multi-controller-isolation.md)** - Running multiple WVA controller instances
 
-### Tutorials
-
-Step-by-step guides:
-
-- **[Quick Start Demo](tutorials/demo.md)** - Getting started with WVA
-- **[Parameter Estimation](tutorials/parameter-estimation.md)** - Estimating model parameters
-- **[vLLM Samples](tutorials/vllm-samples.md)** - Working with vLLM servers
-- **[GuideLLM Sample](tutorials/guidellm-sample.md)** - Using GuideLLM for benchmarking
-
 ### Integrations
 
 Integration with other systems:
@@ -51,9 +42,9 @@ Contributing to WVA:
 ## Quick Links
 
 - [Main README](../README.md)
-- [Kubernetes Deployment](../deploy/kubernetes/README.md)
-- [OpenShift Deployment](../deploy/openshift/README.md)
-- [Local Development with Kind Emulator](../deploy/kind-emulator/README.md)
+- [Installation Guide](user-guide/installation.md)
+- [Install with Deployment Script](user-guide/installation/scripted-deploy.md)
+- [Platform Notes](user-guide/installation/platform-notes.md)
 
 ## Additional Resources
 
@@ -70,4 +61,3 @@ Contributing to WVA:
 ---
 
 **Note:** Documentation is continuously being improved. If you find errors or have suggestions, please open an issue or submit a PR!
-

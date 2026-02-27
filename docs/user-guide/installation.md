@@ -1,146 +1,65 @@
 # Installation Guide
 
-This guide covers installing Workload-Variant-Autoscaler (WVA) on your Kubernetes cluster.
+This is the canonical installation entry point for Workload Variant Autoscaler (WVA).
 
 ## Prerequisites
 
 - Kubernetes v1.32.0 or later
 - Helm 3.x
-- kubectl configured to access your cluster
-- Cluster admin privileges
+- `kubectl` configured to access your cluster
+- Cluster permissions to install CRDs and controller resources
 
-## Installation Methods
+## Choose an Installation Method
 
-### Option 1: Helm Installation
-See the [Helm Installation](../../charts/workload-variant-autoscaler/README.md) for detailed instructions.
+Use one of the following methods based on your environment and goals:
 
-**Verify the installation:**
+| Method | When to Use | Guide |
+|--------|-------------|-------|
+| Helm chart | You already have llm-d/model-serving infrastructure and want to install WVA controller resources | [Install WVA with Helm](installation/helm.md) |
+| Deployment script (`make` + `deploy/install.sh`) | You want repository-supported automation for Kubernetes, OpenShift, or Kind emulator workflows | [Install WVA with the Deployment Script](installation/scripted-deploy.md) |
+| Platform-specific notes | You need Kubernetes/OpenShift/Kind-specific caveats and environment notes | [Platform Notes](installation/platform-notes.md) |
+
+## Verify Installation
+
+### Helm chart
+
+Set the same variables you used during installation (defaults shown):
+
 ```bash
-kubectl get pods -n workload-variant-autoscaler-system
+WVA_NS="${WVA_NS:-workload-variant-autoscaler-system}"
+RELEASE_NAME="${RELEASE_NAME:-workload-variant-autoscaler}"
 ```
 
-### Option 2: Kustomize Installation
-
-Using kustomize for more control:
+Then run:
 
 ```bash
-# Install CRDs
-make install
-
-# Deploy the controller
-make deploy IMG=quay.io/llm-d/workload-variant-autoscaler:latest
+kubectl get deployment -n "$WVA_NS"
+kubectl get crd variantautoscalings.llmd.ai
+kubectl logs -n "$WVA_NS" \
+  deployment/"${RELEASE_NAME}-controller-manager"
 ```
 
-### Option 3: Local Development (Kind Emulator):
-See the [Kind Emulator](../../deploy/kind-emulator/README.md) for detailed instructions.
+### Deployment script
 
+The script defaults to the `workload-variant-autoscaler-system` namespace and the `workload-variant-autoscaler` release name. If you overrode `WVA_NS` or `WVA_RELEASE_NAME`, substitute those values below:
 
-## Configuration
-
-### Helm Values
-
-Key configuration options:
-
-```yaml
-# custom-values.yaml
-image:
-  repository: quay.io/llm-d/workload-variant-autoscaler
-  tag: latest
-  pullPolicy: IfNotPresent
-
-resources:
-  limits:
-    cpu: 500m
-    memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
-
-# Enable Prometheus monitoring
-prometheus:
-  enabled: true
-  servicemonitor:
-    enabled: true
-
-# Optional: Multi-controller isolation
-# Set a unique identifier for this controller instance
-# Useful for parallel testing or multi-tenant environments
-# See docs/user-guide/multi-controller-isolation.md
-wva:
-  controllerInstance: ""  # Leave empty for single controller
-```
-
-### ConfigMaps
-
-WVA uses ConfigMaps for cluster configuration:
-
-- **Service Classes**: SLO definitions for different service tiers
-
-See [Configuration Guide](configuration.md) for details.
-
-## Integrating with HPA/KEDA
-
-WVA can work with existing autoscalers:
-
-**For HPA integration:**
-See [HPA Integration Guide](../integrations/hpa-integration.md)
-
-**For KEDA integration:**
-See [KEDA Integration Guide](../integrations/keda-integration.md)
-
-## Verifying Installation
-
-1. **Check controller is running:**
-   ```bash
-   kubectl get deployment -n workload-variant-autoscaler-system
-   ```
-
-2. **Verify CRDs are installed:**
-   ```bash
-   kubectl get crd variantautoscalings.llmd.ai
-   ```
-
-3. **Check controller logs:**
-   ```bash
-   kubectl logs -n workload-variant-autoscaler-system \
-     deployment/workload-variant-autoscaler-controller-manager
-   ```
-
-## Uninstallation
-
-**Helm:**
 ```bash
-helm uninstall workload-variant-autoscaler -n workload-variant-autoscaler-system
+kubectl get deployment -n workload-variant-autoscaler-system
+kubectl get crd variantautoscalings.llmd.ai
+kubectl logs -n workload-variant-autoscaler-system \
+  deployment/workload-variant-autoscaler-controller-manager
 ```
 
-**Kustomize:**
-```bash
-make undeploy
-make uninstall  # Remove CRDs
-```
+## Uninstall
 
-## Troubleshooting
+The uninstall command depends on your installation method:
 
-### Common Issues
-
-**Controller not starting:**
-- Check if CRDs are installed: `kubectl get crd`
-- Verify RBAC permissions
-- Check controller logs for errors
-
-**Metrics not appearing:**
-- Ensure Prometheus ServiceMonitor is created
-- Verify Prometheus has proper RBAC to scrape metrics
-- Check network policies aren't blocking metrics endpoint
-
-**See Also:**
-- [Configuration Guide](configuration.md)
-- [Troubleshooting Guide](troubleshooting.md) (coming soon)
-- [Developer Guide](../developer-guide/development.md)
+- Helm: see [Install WVA with Helm](installation/helm.md#uninstall)
+- Scripted deployment: see [Install WVA with the Deployment Script](installation/scripted-deploy.md#uninstall)
 
 ## Next Steps
 
-- [Configure your first VariantAutoscaling resource](configuration.md)
-- [Follow the Quick Start Demo](../tutorials/demo.md)
-- [Set up integration with HPA](../integrations/hpa-integration.md)
-
+- [Configuration Guide](configuration.md)
+- [CRD Reference](crd-reference.md)
+- [Troubleshooting Guide](troubleshooting.md)
+- [Multi-Controller Isolation](multi-controller-isolation.md)
