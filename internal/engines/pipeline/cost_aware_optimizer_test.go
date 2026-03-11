@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 var _ = Describe("CostAwareOptimizer", func() {
@@ -33,17 +33,17 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						ModelID:          "model-1",
 						Namespace:        "default",
 						AnalyzedAt:       time.Now(),
 						RequiredCapacity: 5000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "cheap", AcceleratorName: "A100", Cost: 5.0, ReplicaCount: 2, PerReplicaCapacity: 10000},
 							{VariantName: "expensive", AcceleratorName: "H100", Cost: 15.0, ReplicaCount: 1, PerReplicaCapacity: 20000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "cheap", CurrentReplicas: 2},
 						{VariantName: "expensive", CurrentReplicas: 1},
 					},
@@ -64,14 +64,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						RequiredCapacity: 5000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "cheap", Cost: 5.0, ReplicaCount: 2, PerReplicaCapacity: 10000},
 							{VariantName: "mid", Cost: 10.0, ReplicaCount: 1, PerReplicaCapacity: 15000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "cheap", CurrentReplicas: 2, PendingReplicas: 1},
 						{VariantName: "mid", CurrentReplicas: 1},
 					},
@@ -92,14 +92,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						RequiredCapacity: 5000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "zero-cap", Cost: 1.0, ReplicaCount: 0, PerReplicaCapacity: 0},
 							{VariantName: "normal", Cost: 10.0, ReplicaCount: 1, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "zero-cap", CurrentReplicas: 0},
 						{VariantName: "normal", CurrentReplicas: 1},
 					},
@@ -118,14 +118,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						RequiredCapacity: 25000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "cheap", Cost: 5.0, ReplicaCount: 1, PerReplicaCapacity: 10000},
 							{VariantName: "mid", Cost: 10.0, ReplicaCount: 1, PerReplicaCapacity: 15000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "cheap", CurrentReplicas: 1},
 						{VariantName: "mid", CurrentReplicas: 1},
 					},
@@ -148,14 +148,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						SpareCapacity: 15000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "cheap", Cost: 5.0, ReplicaCount: 3, PerReplicaCapacity: 10000},
 							{VariantName: "expensive", Cost: 15.0, ReplicaCount: 2, PerReplicaCapacity: 20000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "cheap", CurrentReplicas: 3},
 						{VariantName: "expensive", CurrentReplicas: 2},
 					},
@@ -180,14 +180,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						SpareCapacity: 30000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "expensive", Cost: 15.0, ReplicaCount: 1, PerReplicaCapacity: 20000},
 							{VariantName: "cheap", Cost: 5.0, ReplicaCount: 1, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "expensive", CurrentReplicas: 1},
 						{VariantName: "cheap", CurrentReplicas: 1},
 					},
@@ -208,14 +208,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						SpareCapacity: 15000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "expensive", Cost: 15.0, ReplicaCount: 1, PerReplicaCapacity: 20000},
 							{VariantName: "cheap", Cost: 5.0, ReplicaCount: 1, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "expensive", CurrentReplicas: 1},
 						{VariantName: "cheap", CurrentReplicas: 1},
 					},
@@ -236,15 +236,15 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						SpareCapacity: 50000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "expensive", Cost: 15.0, ReplicaCount: 2, PerReplicaCapacity: 20000},
 							{VariantName: "mid", Cost: 10.0, ReplicaCount: 2, PerReplicaCapacity: 15000},
 							{VariantName: "cheap", Cost: 5.0, ReplicaCount: 2, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "expensive", CurrentReplicas: 2},
 						{VariantName: "mid", CurrentReplicas: 2},
 						{VariantName: "cheap", CurrentReplicas: 2},
@@ -272,14 +272,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						RequiredCapacity: 0,
 						SpareCapacity:    0,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "v1", Cost: 5.0, ReplicaCount: 2, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "v1", CurrentReplicas: 2},
 					},
 				},
@@ -288,7 +288,7 @@ var _ = Describe("CostAwareOptimizer", func() {
 			decisions := optimizer.Optimize(ctx, requests, nil)
 
 			Expect(decisions).To(HaveLen(1))
-			Expect(decisions[0].Action).To(Equal(interfaces.ActionNoChange))
+			Expect(decisions[0].Action).To(Equal(types.ActionNoChange))
 			Expect(decisions[0].TargetReplicas).To(Equal(2))
 		})
 
@@ -309,26 +309,26 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						RequiredCapacity: 5000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "m1-v1", Cost: 5.0, ReplicaCount: 1, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "m1-v1", CurrentReplicas: 1},
 					},
 				},
 				{
 					ModelID:   "model-2",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						SpareCapacity: 10000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "m2-v1", Cost: 10.0, ReplicaCount: 2, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "m2-v1", CurrentReplicas: 2},
 					},
 				},
@@ -337,9 +337,9 @@ var _ = Describe("CostAwareOptimizer", func() {
 			decisions := optimizer.Optimize(ctx, requests, nil)
 			dm := decisionMap(decisions)
 
-			Expect(dm["m1-v1"].Action).To(Equal(interfaces.ActionScaleUp))
+			Expect(dm["m1-v1"].Action).To(Equal(types.ActionScaleUp))
 			Expect(dm["m1-v1"].TargetReplicas).To(Equal(2))
-			Expect(dm["m2-v1"].Action).To(Equal(interfaces.ActionScaleDown))
+			Expect(dm["m2-v1"].Action).To(Equal(types.ActionScaleDown))
 			Expect(dm["m2-v1"].TargetReplicas).To(Equal(1))
 		})
 	})
@@ -351,13 +351,13 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "ns-1",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						RequiredCapacity: 5000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "v1", AcceleratorName: "A100", Cost: 5.0, ReplicaCount: 1, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "v1", CurrentReplicas: 1},
 					},
 				},
@@ -376,7 +376,7 @@ var _ = Describe("CostAwareOptimizer", func() {
 	Context("Helper Functions", func() {
 
 		It("sortByCostEfficiencyAsc should order by cost/capacity", func() {
-			capacities := []interfaces.VariantCapacity{
+			capacities := []types.VariantCapacity{
 				{VariantName: "expensive", Cost: 15.0, PerReplicaCapacity: 10000}, // 0.0015
 				{VariantName: "cheap", Cost: 5.0, PerReplicaCapacity: 10000},      // 0.0005
 				{VariantName: "mid", Cost: 10.0, PerReplicaCapacity: 10000},       // 0.001
@@ -390,7 +390,7 @@ var _ = Describe("CostAwareOptimizer", func() {
 		})
 
 		It("sortByCostDesc should order by absolute cost descending", func() {
-			capacities := []interfaces.VariantCapacity{
+			capacities := []types.VariantCapacity{
 				{VariantName: "cheap", Cost: 5.0},
 				{VariantName: "expensive", Cost: 15.0},
 				{VariantName: "mid", Cost: 10.0},
@@ -404,7 +404,7 @@ var _ = Describe("CostAwareOptimizer", func() {
 		})
 
 		It("findCheapestVariant should return lowest cost variant", func() {
-			capacities := []interfaces.VariantCapacity{
+			capacities := []types.VariantCapacity{
 				{VariantName: "mid", Cost: 10.0},
 				{VariantName: "cheap", Cost: 5.0},
 				{VariantName: "expensive", Cost: 15.0},
@@ -427,8 +427,8 @@ var _ = Describe("CostAwareOptimizer", func() {
 	})
 })
 
-func decisionMap(decisions []interfaces.VariantDecision) map[string]interfaces.VariantDecision {
-	m := make(map[string]interfaces.VariantDecision, len(decisions))
+func decisionMap(decisions []types.VariantDecision) map[string]types.VariantDecision {
+	m := make(map[string]types.VariantDecision, len(decisions))
 	for _, d := range decisions {
 		m[d.VariantName] = d
 	}

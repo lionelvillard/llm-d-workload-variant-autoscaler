@@ -8,8 +8,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // Analyzer implements the V1 percentage-based saturation analyzer.
@@ -33,12 +33,12 @@ func (a *Analyzer) AnalyzeModelSaturation(
 	ctx context.Context,
 	modelID string,
 	namespace string,
-	replicaMetrics []interfaces.ReplicaMetrics,
+	replicaMetrics []types.ReplicaMetrics,
 	config config.SaturationScalingConfig,
-) (*interfaces.ModelSaturationAnalysis, error) {
+) (*types.ModelSaturationAnalysis, error) {
 
 	if len(replicaMetrics) == 0 {
-		return &interfaces.ModelSaturationAnalysis{
+		return &types.ModelSaturationAnalysis{
 			ModelID:       modelID,
 			Namespace:     namespace,
 			AnalyzedAt:    time.Now(),
@@ -46,11 +46,11 @@ func (a *Analyzer) AnalyzeModelSaturation(
 			ShouldScaleUp: false,
 
 			ScaleDownSafe:   false,
-			VariantAnalyses: []interfaces.VariantSaturationAnalysis{},
+			VariantAnalyses: []types.VariantSaturationAnalysis{},
 		}, nil
 	}
 
-	analysis := &interfaces.ModelSaturationAnalysis{
+	analysis := &types.ModelSaturationAnalysis{
 		ModelID:    modelID,
 		Namespace:  namespace,
 		AnalyzedAt: time.Now(),
@@ -64,9 +64,9 @@ func (a *Analyzer) AnalyzeModelSaturation(
 	}
 
 	// Pre-allocate slices with exact Saturation
-	variantMap := make(map[string][]interfaces.ReplicaMetrics, len(variantCounts))
+	variantMap := make(map[string][]types.ReplicaMetrics, len(variantCounts))
 	for variant, count := range variantCounts {
-		variantMap[variant] = make([]interfaces.ReplicaMetrics, 0, count)
+		variantMap[variant] = make([]types.ReplicaMetrics, 0, count)
 	}
 
 	// Populate with metrics (no reallocation needed)
@@ -79,7 +79,7 @@ func (a *Analyzer) AnalyzeModelSaturation(
 	var totalSpareQueue float64
 	var nonSaturatedCount int
 
-	variantAnalyses := make([]interfaces.VariantSaturationAnalysis, 0, len(variantMap))
+	variantAnalyses := make([]types.VariantSaturationAnalysis, 0, len(variantMap))
 
 	for variantName, metrics := range variantMap {
 		variantAnalysis := a.analyzeVariant(ctx, variantName, metrics, config)
@@ -135,11 +135,11 @@ func (a *Analyzer) AnalyzeModelSaturation(
 func (a *Analyzer) analyzeVariant(
 	ctx context.Context,
 	variantName string,
-	metrics []interfaces.ReplicaMetrics,
+	metrics []types.ReplicaMetrics,
 	config config.SaturationScalingConfig,
-) interfaces.VariantSaturationAnalysis {
+) types.VariantSaturationAnalysis {
 
-	analysis := interfaces.VariantSaturationAnalysis{
+	analysis := types.VariantSaturationAnalysis{
 		VariantName:       variantName,
 		ReplicaCount:      len(metrics),
 		SaturatedReplicas: []string{},
@@ -290,8 +290,8 @@ func (a *Analyzer) isScaleDownSafe(
 // - Else: target = readyReplicas (replicas with metrics)
 func (a *Analyzer) CalculateSaturationTargets(
 	ctx context.Context,
-	saturationAnalysis *interfaces.ModelSaturationAnalysis,
-	variantStates []interfaces.VariantReplicaState,
+	saturationAnalysis *types.ModelSaturationAnalysis,
+	variantStates []types.VariantReplicaState,
 ) map[string]int {
 
 	targets := make(map[string]int)
@@ -307,7 +307,7 @@ func (a *Analyzer) CalculateSaturationTargets(
 	}
 
 	// Build state map for quick lookup
-	stateMap := make(map[string]interfaces.VariantReplicaState)
+	stateMap := make(map[string]types.VariantReplicaState)
 	for _, state := range variantStates {
 		stateMap[state.VariantName] = state
 	}
@@ -374,7 +374,7 @@ func (a *Analyzer) CalculateSaturationTargets(
 	// STEP 4: Model is stable - proceed with scaling decisions
 	if saturationAnalysis.ShouldScaleUp {
 		// Find cheapest variant for scale-up, skipping variants with pending replicas
-		var cheapestVariant *interfaces.VariantSaturationAnalysis
+		var cheapestVariant *types.VariantSaturationAnalysis
 		for i := range saturationAnalysis.VariantAnalyses {
 			va := &saturationAnalysis.VariantAnalyses[i]
 
@@ -405,7 +405,7 @@ func (a *Analyzer) CalculateSaturationTargets(
 
 	} else if saturationAnalysis.ScaleDownSafe {
 		// Find most expensive variant for scale-down
-		var mostExpensiveVariant *interfaces.VariantSaturationAnalysis
+		var mostExpensiveVariant *types.VariantSaturationAnalysis
 		for i := range saturationAnalysis.VariantAnalyses {
 			va := &saturationAnalysis.VariantAnalyses[i]
 			// Can't scale down if at or below minimum (1 replica)

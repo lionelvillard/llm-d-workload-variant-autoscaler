@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // DefaultLimiter combines an Inventory with an AllocationAlgorithm to constrain
@@ -39,7 +39,7 @@ func (l *DefaultLimiter) Name() string {
 
 // Limit applies resource constraints to scaling decisions.
 // Modifies decisions in place - may reduce TargetReplicas based on available resources.
-func (l *DefaultLimiter) Limit(ctx context.Context, decisions []*interfaces.VariantDecision) error {
+func (l *DefaultLimiter) Limit(ctx context.Context, decisions []*types.VariantDecision) error {
 	if len(decisions) == 0 {
 		return nil
 	}
@@ -69,7 +69,7 @@ func (l *DefaultLimiter) Limit(ctx context.Context, decisions []*interfaces.Vari
 
 // calculateUsedGPUs computes current GPU usage per accelerator type.
 // Uses CurrentReplicas * GPUsPerReplica for each decision.
-func (l *DefaultLimiter) calculateUsedGPUs(decisions []*interfaces.VariantDecision) map[string]int {
+func (l *DefaultLimiter) calculateUsedGPUs(decisions []*types.VariantDecision) map[string]int {
 	usedByType := make(map[string]int)
 	for _, d := range decisions {
 		if d.AcceleratorName == "" {
@@ -82,7 +82,7 @@ func (l *DefaultLimiter) calculateUsedGPUs(decisions []*interfaces.VariantDecisi
 
 // updateDecisionMetadata sets LimitedBy and adds DecisionSteps.
 // Note: WasLimited is set by the algorithm during allocation.
-func (l *DefaultLimiter) updateDecisionMetadata(decisions []*interfaces.VariantDecision) {
+func (l *DefaultLimiter) updateDecisionMetadata(decisions []*types.VariantDecision) {
 	for _, d := range decisions {
 		// If the algorithm marked the decision as limited, set LimitedBy
 		if d.WasLimited {
@@ -96,7 +96,7 @@ func (l *DefaultLimiter) updateDecisionMetadata(decisions []*interfaces.VariantD
 }
 
 // buildStepReason creates a human-readable reason for the decision step.
-func (l *DefaultLimiter) buildStepReason(d *interfaces.VariantDecision) string {
+func (l *DefaultLimiter) buildStepReason(d *types.VariantDecision) string {
 	replicaChange := d.TargetReplicas - d.CurrentReplicas
 
 	if replicaChange <= 0 {

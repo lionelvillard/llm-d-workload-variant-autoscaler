@@ -9,8 +9,8 @@ import (
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
 	queueingmodel "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/analyzers/queueingmodel"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/pipeline"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // optimizeQueueingModel runs the queueing model-based analysis path.
@@ -21,8 +21,8 @@ import (
 func (e *Engine) optimizeQueueingModel(
 	ctx context.Context,
 	modelGroups map[string][]llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-	currentAllocations map[string]*interfaces.Allocation,
-) []interfaces.VariantDecision {
+	currentAllocations map[string]*types.Allocation,
+) []types.VariantDecision {
 	logger := ctrl.LoggerFrom(ctx)
 
 	// update analyzer given current models
@@ -110,13 +110,13 @@ func (e *Engine) optimizeQueueingModel(
 func (e *Engine) runQueueingModelAnalysis(
 	ctx context.Context,
 	modelID, namespace string,
-	replicaMetrics []interfaces.ReplicaMetrics,
+	replicaMetrics []types.ReplicaMetrics,
 	config *queueingmodel.QMConfig,
-	variantStates []interfaces.VariantReplicaState,
-) (*interfaces.AnalyzerResult, error) {
+	variantStates []types.VariantReplicaState,
+) (*types.AnalyzerResult, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
-	input := interfaces.AnalyzerInput{
+	input := types.AnalyzerInput{
 		ModelID:        modelID,
 		Namespace:      namespace,
 		ReplicaMetrics: replicaMetrics,
@@ -146,7 +146,7 @@ func (e *Engine) runQueueingModelAnalysis(
 // sloMultiplier, tuningEnabled, and provide explicit SLO targets (targetTTFT/targetITL).
 // Falls back to defaults when fields are zero/nil.
 func buildQMConfig(
-	allConfigs map[string]interfaces.QueueingModelScalingConfig,
+	allConfigs map[string]types.QueueingModelScalingConfig,
 	namespace, modelID string,
 ) *queueingmodel.QMConfig {
 	cfg := &queueingmodel.QMConfig{

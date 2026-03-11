@@ -4,7 +4,7 @@ import (
 	"context"
 
 	llmdOptv1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
-	interfaces "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils"
 	inferno "github.com/llm-d/llm-d-workload-variant-autoscaler/pkg/core"
 )
@@ -23,12 +23,12 @@ func NewModelAnalyzer(system *inferno.System) *ModelAnalyzer {
 
 // Analyze a particular variant and generate corresponding allocations that achieve SLOs for all accelerators, used by the optimizer
 func (ma *ModelAnalyzer) AnalyzeModel(ctx context.Context,
-	va llmdOptv1alpha1.VariantAutoscaling) *interfaces.ModelAnalyzeResponse {
+	va llmdOptv1alpha1.VariantAutoscaling) *types.ModelAnalyzeResponse {
 
 	serverName := utils.FullName(va.Name, va.Namespace)
 	if server, exists := ma.system.Servers()[serverName]; exists {
 		server.Calculate(ma.system.Accelerators())
 		return CreateModelAnalyzeResponseFromAllocations(server.AllAllocations())
 	}
-	return &interfaces.ModelAnalyzeResponse{}
+	return &types.ModelAnalyzeResponse{}
 }

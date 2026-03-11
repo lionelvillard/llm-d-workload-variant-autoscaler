@@ -43,9 +43,9 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/common"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/executor"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/pipeline"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/saturation"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils"
 )
 
@@ -240,7 +240,7 @@ func (e *Engine) optimize(ctx context.Context) error {
 
 	// Create map to store current allocations populated during metrics collection
 	// Keyed by VariantAutoscaling Namespace/Name
-	currentAllocations := make(map[string]*interfaces.Allocation)
+	currentAllocations := make(map[string]*types.Allocation)
 
 	// Determine which analyzer to use.
 	// Priority: queueing model ConfigMap (presence-based) > saturation config analyzerName.
@@ -261,12 +261,12 @@ func (e *Engine) optimize(ctx context.Context) error {
 
 	// Queueing model ConfigMap takes priority over saturation analyzerName.
 	if hasQMAnalyzerConfig {
-		analyzerName = interfaces.QueueingModelAnalyzerName
+		analyzerName = types.QueueingModelAnalyzerName
 	}
 
 	// Select optimizer based on enableLimiter flag (both are stateless, safe to swap)
 	// Applies to V2 and queueing-model paths which both use the optimizer pipeline.
-	if analyzerName == "saturation" || analyzerName == interfaces.QueueingModelAnalyzerName {
+	if analyzerName == "saturation" || analyzerName == types.QueueingModelAnalyzerName {
 		if enableLimiter {
 			e.optimizer = pipeline.NewGreedyByScoreOptimizer()
 		} else {
@@ -275,7 +275,7 @@ func (e *Engine) optimize(ctx context.Context) error {
 		logger.V(logging.DEBUG).Info("Optimizer selected", "analyzer", analyzerName, "optimizer", e.optimizer.Name(), "enableLimiter", enableLimiter)
 	}
 
-	var allDecisions []interfaces.VariantDecision
+	var allDecisions []types.VariantDecision
 
 	// Each analyzer has a separate optimize path because they use fundamentally
 	// different analysis types and target-building flows:
@@ -285,7 +285,7 @@ func (e *Engine) optimize(ctx context.Context) error {
 	// V1 will be deprecated once V2 is fully validated.
 	// Queueing model is activated by presence of wva-queueing-model-config ConfigMap.
 	switch analyzerName {
-	case interfaces.QueueingModelAnalyzerName:
+	case types.QueueingModelAnalyzerName:
 		allDecisions = e.optimizeQueueingModel(ctx, modelGroups, currentAllocations)
 	case "saturation":
 		allDecisions = e.optimizeV2(ctx, modelGroups, currentAllocations)
@@ -321,10 +321,10 @@ func (e *Engine) optimize(ctx context.Context) error {
 func (e *Engine) optimizeV1(
 	ctx context.Context,
 	modelGroups map[string][]llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-	currentAllocations map[string]*interfaces.Allocation,
-) []interfaces.VariantDecision {
+	currentAllocations map[string]*types.Allocation,
+) []types.VariantDecision {
 	logger := ctrl.LoggerFrom(ctx)
-	var allDecisions []interfaces.VariantDecision
+	var allDecisions []types.VariantDecision
 
 	for groupKey, modelVAs := range modelGroups {
 		modelID := modelVAs[0].Spec.ModelID
@@ -353,7 +353,7 @@ func (e *Engine) optimizeV1(
 			continue
 		}
 
-		var finalDecisions []interfaces.VariantDecision
+		var finalDecisions []types.VariantDecision
 		if saturationAnalysis != nil {
 			// Convert saturation targets to decisions first, then apply enforcer
 			finalDecisions = e.convertSaturationTargetsToDecisions(ctx, saturationTargets, saturationAnalysis, variantStates)
@@ -392,7 +392,7 @@ func (e *Engine) optimizeV1(
 		logger.Info("Applying GPU limiter to scaling decisions",
 			"decisionCount", len(allDecisions))
 
-		decisionPtrs := make([]*interfaces.VariantDecision, len(allDecisions))
+		decisionPtrs := make([]*types.VariantDecision, len(allDecisions))
 		for i := range allDecisions {
 			decisionPtrs[i] = &allDecisions[i]
 		}
@@ -420,8 +420,8 @@ func (e *Engine) optimizeV1(
 func (e *Engine) optimizeV2(
 	ctx context.Context,
 	modelGroups map[string][]llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-	currentAllocations map[string]*interfaces.Allocation,
-) []interfaces.VariantDecision {
+	currentAllocations map[string]*types.Allocation,
+) []types.VariantDecision {
 	logger := ctrl.LoggerFrom(ctx)
 
 	// Stage 1: Collect ModelScalingRequests for all models
@@ -515,8 +515,8 @@ func (e *Engine) BuildVariantStates(
 	vas []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
 	deployments map[string]*appsv1.Deployment,
 	k8sClient client.Client,
-) []interfaces.VariantReplicaState {
-	states := make([]interfaces.VariantReplicaState, 0, len(vas))
+) []types.VariantReplicaState {
+	states := make([]types.VariantReplicaState, 0, len(vas))
 
 	for _, va := range vas {
 		// Get current replicas from deployment using ScaleTargetRef
@@ -568,7 +568,7 @@ func (e *Engine) BuildVariantStates(
 
 		ctrl.LoggerFrom(ctx).V(logging.DEBUG).Info("BuildVariantStates result", "variant", va.Name, "currentReplicas", currentReplicas, "readyReplicas", readyReplicas, "pendingReplicas", pendingReplicas, "gpusPerReplica", gpusPerReplica, "role", role)
 
-		states = append(states, interfaces.VariantReplicaState{
+		states = append(states, types.VariantReplicaState{
 			VariantName:     va.Name,
 			CurrentReplicas: currentReplicas,
 			DesiredReplicas: va.Status.DesiredOptimizedAlloc.NumReplicas,
@@ -638,21 +638,21 @@ func getDeploymentGPUsPerReplica(deploy *appsv1.Deployment) int {
 func (e *Engine) convertSaturationTargetsToDecisions(
 	ctx context.Context,
 	saturationTargets map[string]int,
-	saturationAnalysis *interfaces.ModelSaturationAnalysis,
-	variantStates []interfaces.VariantReplicaState,
-) []interfaces.VariantDecision {
+	saturationAnalysis *types.ModelSaturationAnalysis,
+	variantStates []types.VariantReplicaState,
+) []types.VariantDecision {
 	logger := ctrl.LoggerFrom(ctx)
-	decisions := make([]interfaces.VariantDecision, 0, len(saturationTargets))
+	decisions := make([]types.VariantDecision, 0, len(saturationTargets))
 
 	// Build variant analysis map for quick lookup
-	vaMap := make(map[string]*interfaces.VariantSaturationAnalysis)
+	vaMap := make(map[string]*types.VariantSaturationAnalysis)
 	for i := range saturationAnalysis.VariantAnalyses {
 		va := &saturationAnalysis.VariantAnalyses[i]
 		vaMap[va.VariantName] = va
 	}
 
 	// Build state map for quick lookup
-	stateMap := make(map[string]interfaces.VariantReplicaState)
+	stateMap := make(map[string]types.VariantReplicaState)
 	for _, state := range variantStates {
 		stateMap[state.VariantName] = state
 	}
@@ -661,13 +661,13 @@ func (e *Engine) convertSaturationTargetsToDecisions(
 		state := stateMap[variantName]
 		va := vaMap[variantName]
 
-		var action interfaces.SaturationAction
+		var action types.SaturationAction
 		if targetReplicas > state.CurrentReplicas {
-			action = interfaces.ActionScaleUp
+			action = types.ActionScaleUp
 		} else if targetReplicas < state.CurrentReplicas {
-			action = interfaces.ActionScaleDown
+			action = types.ActionScaleDown
 		} else {
-			action = interfaces.ActionNoChange
+			action = types.ActionNoChange
 		}
 
 		// Use GPUsPerReplica from variant state (extracted from deployment)
@@ -676,7 +676,7 @@ func (e *Engine) convertSaturationTargetsToDecisions(
 			gpusPerReplica = 1 // Fallback default
 		}
 
-		decision := interfaces.VariantDecision{
+		decision := types.VariantDecision{
 			VariantName:            variantName,
 			Namespace:              saturationAnalysis.Namespace,
 			ModelID:                saturationAnalysis.ModelID,
@@ -713,11 +713,11 @@ func (e *Engine) convertSaturationTargetsToDecisions(
 type modelData struct {
 	modelID             string
 	namespace           string
-	replicaMetrics      []interfaces.ReplicaMetrics
+	replicaMetrics      []types.ReplicaMetrics
 	deployments         map[string]*appsv1.Deployment
 	variantAutoscalings map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling
 	variantCosts        map[string]float64
-	variantStates       []interfaces.VariantReplicaState
+	variantStates       []types.VariantReplicaState
 }
 
 // prepareModelData collects metrics and builds lookup maps for a model's VAs.
@@ -813,7 +813,7 @@ func (e *Engine) RunSaturationAnalysis(
 	modelVAs []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
 	SaturationConfig config.SaturationScalingConfig,
 	k8sClient client.Client,
-) (map[string]int, *interfaces.ModelSaturationAnalysis, []interfaces.VariantReplicaState, error) {
+) (map[string]int, *types.ModelSaturationAnalysis, []types.VariantReplicaState, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
 	SaturationConfig.ApplyDefaults()
@@ -854,14 +854,14 @@ func (e *Engine) RunSaturationAnalysis(
 // applySaturationDecisions updates VA status and emits metrics based on Saturation decisions.
 func (e *Engine) applySaturationDecisions(
 	ctx context.Context,
-	decisions []interfaces.VariantDecision,
+	decisions []types.VariantDecision,
 	vaMap map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-	currentAllocations map[string]*interfaces.Allocation,
+	currentAllocations map[string]*types.Allocation,
 ) error {
 	logger := ctrl.LoggerFrom(ctx)
 	// Create a map of decisions for O(1) lookup
 	// Use namespace/variantName as key to match vaMap and avoid collisions
-	decisionMap := make(map[string]interfaces.VariantDecision)
+	decisionMap := make(map[string]types.VariantDecision)
 	for _, d := range decisions {
 		decisionMap[utils.GetNamespacedKey(d.Namespace, d.VariantName)] = d
 	}
@@ -938,7 +938,7 @@ func (e *Engine) applySaturationDecisions(
 			// This is a partial decision for metrics status only - other fields like
 			// TargetReplicas and AcceleratorName are left at zero values since we don't
 			// have enough information to set them.
-			common.DecisionCache.Set(va.Name, va.Namespace, interfaces.VariantDecision{
+			common.DecisionCache.Set(va.Name, va.Namespace, types.VariantDecision{
 				VariantName:      vaName,
 				Namespace:        va.Namespace,
 				MetricsAvailable: false,
@@ -1039,7 +1039,7 @@ func (e *Engine) applySaturationDecisions(
 			metricsMessage = llmdVariantAutoscalingV1alpha1.MessageMetricsAvailable
 		}
 
-		common.DecisionCache.Set(va.Name, va.Namespace, interfaces.VariantDecision{
+		common.DecisionCache.Set(va.Name, va.Namespace, types.VariantDecision{
 			VariantName:       vaName,
 			Namespace:         va.Namespace,
 			TargetReplicas:    targetReplicas,
@@ -1073,7 +1073,7 @@ func (e *Engine) applySaturationDecisions(
 func (e *Engine) emitSafetyNetMetrics(
 	ctx context.Context,
 	modelVAs []llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-	currentAllocations map[string]*interfaces.Allocation,
+	currentAllocations map[string]*types.Allocation,
 ) {
 	logger := ctrl.LoggerFrom(ctx)
 	act := actuator.NewActuator(e.client)

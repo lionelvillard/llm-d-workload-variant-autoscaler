@@ -26,7 +26,7 @@ import (
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // parseSaturationConfig parses saturation scaling configuration from ConfigMap data.
@@ -58,7 +58,7 @@ func parseQMAnalyzerConfig(cmData map[string]string, logger logr.Logger) (config
 	configs := make(config.QMAnalyzerConfigPerModel)
 	count := 0
 	for key, yamlStr := range cmData {
-		var qmConfig interfaces.QueueingModelScalingConfig
+		var qmConfig types.QueueingModelScalingConfig
 		if err := yaml.Unmarshal([]byte(yamlStr), &qmConfig); err != nil {
 			logger.Error(err, "Failed to parse queueing model config entry", "key", key)
 			continue

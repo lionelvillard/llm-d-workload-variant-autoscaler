@@ -41,8 +41,8 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/datastore"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/common"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/executor"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils"
 	poolutil "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils/pool"
 )
@@ -302,7 +302,7 @@ func (e *Engine) processInactiveVariant(ctx context.Context, va wvav1alpha1.Vari
 		if err != nil {
 			return err
 		}
-		common.DecisionCache.Set(va.Name, va.Namespace, interfaces.VariantDecision{
+		common.DecisionCache.Set(va.Name, va.Namespace, types.VariantDecision{
 			VariantName:        va.Name,
 			Namespace:          va.Namespace,
 			ModelID:            va.Spec.ModelID,

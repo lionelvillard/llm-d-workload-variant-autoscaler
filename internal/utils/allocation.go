@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 	appsv1 "k8s.io/api/apps/v1"
 )
 
@@ -17,11 +17,11 @@ import (
 //
 // This function is placed in utils to avoid import cycles between collector and controller packages.
 func BuildAllocationFromMetrics(
-	metrics interfaces.OptimizerMetrics,
+	metrics types.OptimizerMetrics,
 	va *v1alpha1.VariantAutoscaling,
 	deployment appsv1.Deployment,
 	acceleratorCost float64,
-) (interfaces.Allocation, error) {
+) (types.Allocation, error) {
 	// Extract K8s information
 	// Number of replicas
 	numReplicas := int(*deployment.Spec.Replicas)
@@ -31,7 +31,7 @@ func BuildAllocationFromMetrics(
 	if val, ok := va.Labels["inference.optimization/acceleratorName"]; ok && val != "" {
 		acc = val
 	} else {
-		return interfaces.Allocation{},
+		return types.Allocation{},
 			fmt.Errorf("missing or empty acceleratorName label on VariantAutoscaling object: %s", va.Name)
 	}
 
@@ -54,14 +54,14 @@ func BuildAllocationFromMetrics(
 	avgOutputTokensStr := strconv.FormatFloat(metrics.AvgOutputTokens, 'f', 2, 64)
 
 	// Build Allocation struct
-	allocation := interfaces.Allocation{
+	allocation := types.Allocation{
 		Accelerator: acc,
 		NumReplicas: numReplicas,
 		MaxBatch:    maxBatch,
 		// VariantCost removed from Status
 		TTFTAverage: ttftAverageStr,
 		ITLAverage:  itlAverageStr,
-		Load: interfaces.LoadProfile{
+		Load: types.LoadProfile{
 			ArrivalRate:     arrivalRateStr,
 			AvgInputTokens:  avgInputTokensStr,
 			AvgOutputTokens: avgOutputTokensStr,

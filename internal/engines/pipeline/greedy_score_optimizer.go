@@ -7,8 +7,8 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // GreedyByScoreOptimizer is a multi-model optimizer for GPU-constrained
@@ -47,7 +47,7 @@ func (o *GreedyByScoreOptimizer) Optimize(
 	ctx context.Context,
 	requests []ModelScalingRequest,
 	constraints []*ResourceConstraints,
-) []interfaces.VariantDecision {
+) []types.VariantDecision {
 	logger := ctrl.LoggerFrom(ctx).WithName(o.Name())
 	available := mergeConstraints(constraints)
 
@@ -74,7 +74,7 @@ func (o *GreedyByScoreOptimizer) Optimize(
 	o.fairShareScaleUp(ctx, scaleUpWork, available)
 
 	// Build all decisions
-	var allDecisions []interfaces.VariantDecision
+	var allDecisions []types.VariantDecision
 
 	for _, w := range scaleUpWork {
 		stateMap := buildStateMap(w.req.VariantStates)
@@ -239,7 +239,7 @@ func (o *GreedyByScoreOptimizer) allocateByRole(
 	ctx context.Context,
 	w *modelWork,
 	totalTarget float64,
-	stateMap map[string]interfaces.VariantReplicaState,
+	stateMap map[string]types.VariantReplicaState,
 	available map[string]int,
 ) bool {
 	logger := ctrl.LoggerFrom(ctx)
@@ -295,8 +295,8 @@ func (o *GreedyByScoreOptimizer) allocateToVariants(
 	ctx context.Context,
 	w *modelWork,
 	target float64,
-	capacities []interfaces.VariantCapacity,
-	stateMap map[string]interfaces.VariantReplicaState,
+	capacities []types.VariantCapacity,
+	stateMap map[string]types.VariantReplicaState,
 	available map[string]int,
 	role string,
 ) bool {
@@ -351,11 +351,11 @@ func (o *GreedyByScoreOptimizer) allocateToVariants(
 
 // filterVariantCapacitiesByRole returns variant capacities matching the specified role.
 // For role "both" or empty, returns all capacities.
-func filterVariantCapacitiesByRole(capacities []interfaces.VariantCapacity, role string) []interfaces.VariantCapacity {
+func filterVariantCapacitiesByRole(capacities []types.VariantCapacity, role string) []types.VariantCapacity {
 	if role == "both" || role == "" {
 		return capacities
 	}
-	var filtered []interfaces.VariantCapacity
+	var filtered []types.VariantCapacity
 	for _, vc := range capacities {
 		vcRole := vc.Role
 		if vcRole == "" {

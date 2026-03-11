@@ -8,9 +8,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/saturation"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // RequestCountFuncType is the signature for functions that retrieve the total request count
@@ -40,7 +40,7 @@ func (e *Enforcer) EnforcePolicyOnDecisions(
 	ctx context.Context,
 	modelID string,
 	namespace string,
-	decisions []interfaces.VariantDecision,
+	decisions []types.VariantDecision,
 	scaleToZeroConfig config.ScaleToZeroConfigData,
 	optimizerName string,
 ) bool {
@@ -74,7 +74,7 @@ func (e *Enforcer) applyScaleToZeroOnDecisions(
 	ctx context.Context,
 	modelID string,
 	namespace string,
-	decisions []interfaces.VariantDecision,
+	decisions []types.VariantDecision,
 	scaleToZeroConfig config.ScaleToZeroConfigData,
 	optimizerName string,
 ) bool {
@@ -123,7 +123,7 @@ func (e *Enforcer) ensureMinimumReplicasOnDecisions(
 	ctx context.Context,
 	modelID string,
 	namespace string,
-	decisions []interfaces.VariantDecision,
+	decisions []types.VariantDecision,
 	optimizerName string,
 ) bool {
 	logger := ctrl.LoggerFrom(ctx)
@@ -174,15 +174,14 @@ func (e *Enforcer) ensureMinimumReplicasOnDecisions(
 
 // updateDecisionAction updates a decision's Action and Reason fields based on
 // the current TargetReplicas vs CurrentReplicas after enforcement.
-func updateDecisionAction(d *interfaces.VariantDecision, optimizerName string) {
+func updateDecisionAction(d *types.VariantDecision, optimizerName string) {
 	switch {
 	case d.TargetReplicas > d.CurrentReplicas:
-		d.Action = interfaces.ActionScaleUp
+		d.Action = types.ActionScaleUp
 	case d.TargetReplicas < d.CurrentReplicas:
-		d.Action = interfaces.ActionScaleDown
+		d.Action = types.ActionScaleDown
 	default:
-		d.Action = interfaces.ActionNoChange
+		d.Action = types.ActionNoChange
 	}
 	d.Reason = fmt.Sprintf("V2 %s (optimizer: %s, enforced)", d.Action, optimizerName)
 }
-

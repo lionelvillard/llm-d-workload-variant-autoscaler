@@ -10,8 +10,8 @@ import (
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/pipeline"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils"
 )
 
@@ -21,12 +21,12 @@ import (
 func (e *Engine) runV2AnalysisOnly(
 	ctx context.Context,
 	modelID, namespace string,
-	replicaMetrics []interfaces.ReplicaMetrics,
+	replicaMetrics []types.ReplicaMetrics,
 	config config.SaturationScalingConfig,
-	variantStates []interfaces.VariantReplicaState,
+	variantStates []types.VariantReplicaState,
 	deployments map[string]*appsv1.Deployment,
 	variantAutoscalings map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-) (*interfaces.AnalyzerResult, error) {
+) (*types.AnalyzerResult, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
 	// 1. Pre-populate capacity store with deployment-derived params
@@ -46,7 +46,7 @@ func (e *Engine) runV2AnalysisOnly(
 	}
 
 	// 2. Build AnalyzerInput
-	input := interfaces.AnalyzerInput{
+	input := types.AnalyzerInput{
 		ModelID:        modelID,
 		Namespace:      namespace,
 		ReplicaMetrics: replicaMetrics,
@@ -77,12 +77,12 @@ func (e *Engine) runV2AnalysisOnly(
 func (e *Engine) runAnalyzersAndScore(
 	ctx context.Context,
 	modelID, namespace string,
-	replicaMetrics []interfaces.ReplicaMetrics,
+	replicaMetrics []types.ReplicaMetrics,
 	config config.SaturationScalingConfig,
-	variantStates []interfaces.VariantReplicaState,
+	variantStates []types.VariantReplicaState,
 	deployments map[string]*appsv1.Deployment,
 	variantAutoscalings map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-) (*interfaces.AnalyzerResult, error) {
+) (*types.AnalyzerResult, error) {
 	// Resolve per-analyzer threshold overrides before running the analyzer.
 	// The saturation analyzer reads thresholds from the config, so we apply
 	// per-analyzer overrides to the config's top-level fields.
@@ -114,7 +114,7 @@ func (e *Engine) runAnalyzersAndScore(
 		switch aw.Name {
 		case "saturation":
 			totalWeighted += baseResult.RequiredCapacity * aw.Score
-		// future: case "throughput", "slo"
+			// future: case "throughput", "slo"
 		}
 	}
 
@@ -132,7 +132,7 @@ func computeCurrentGPUUsage(requests []pipeline.ModelScalingRequest) map[string]
 		if req.Result == nil {
 			continue
 		}
-		stateMap := make(map[string]interfaces.VariantReplicaState, len(req.VariantStates))
+		stateMap := make(map[string]types.VariantReplicaState, len(req.VariantStates))
 		for _, s := range req.VariantStates {
 			stateMap[s.VariantName] = s
 		}
@@ -153,9 +153,9 @@ func computeCurrentGPUUsage(requests []pipeline.ModelScalingRequest) map[string]
 func (e *Engine) collectV2ModelRequest(
 	ctx context.Context,
 	modelID, namespace string,
-	replicaMetrics []interfaces.ReplicaMetrics,
+	replicaMetrics []types.ReplicaMetrics,
 	config config.SaturationScalingConfig,
-	variantStates []interfaces.VariantReplicaState,
+	variantStates []types.VariantReplicaState,
 	deployments map[string]*appsv1.Deployment,
 	variantAutoscalings map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
 ) (*pipeline.ModelScalingRequest, error) {

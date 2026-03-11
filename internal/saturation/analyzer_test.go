@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 func init() {
@@ -26,13 +26,13 @@ func TestAnalyzeModelSaturation_ScaleUp(t *testing.T) {
 
 	tests := []struct {
 		name                string
-		replicaMetrics      []interfaces.ReplicaMetrics
+		replicaMetrics      []types.ReplicaMetrics
 		expectScaleUp       bool
 		expectScaleUpReason string
 	}{
 		{
 			name: "scale up due to low KV spare Saturation",
-			replicaMetrics: []interfaces.ReplicaMetrics{
+			replicaMetrics: []types.ReplicaMetrics{
 				{PodName: "pod-1", VariantName: "v1", KvCacheUsage: 0.75, QueueLength: 2},
 				{PodName: "pod-2", VariantName: "v1", KvCacheUsage: 0.76, QueueLength: 2},
 			},
@@ -40,7 +40,7 @@ func TestAnalyzeModelSaturation_ScaleUp(t *testing.T) {
 		},
 		{
 			name: "scale up due to low queue spare Saturation",
-			replicaMetrics: []interfaces.ReplicaMetrics{
+			replicaMetrics: []types.ReplicaMetrics{
 				{PodName: "pod-1", VariantName: "v1", KvCacheUsage: 0.50, QueueLength: 3},
 				{PodName: "pod-2", VariantName: "v1", KvCacheUsage: 0.50, QueueLength: 3},
 			},
@@ -48,7 +48,7 @@ func TestAnalyzeModelSaturation_ScaleUp(t *testing.T) {
 		},
 		{
 			name: "no scale up - healthy Saturation",
-			replicaMetrics: []interfaces.ReplicaMetrics{
+			replicaMetrics: []types.ReplicaMetrics{
 				{PodName: "pod-1", VariantName: "v1", KvCacheUsage: 0.50, QueueLength: 1},
 				{PodName: "pod-2", VariantName: "v1", KvCacheUsage: 0.50, QueueLength: 1},
 			},
@@ -89,12 +89,12 @@ func TestAnalyzeModelSaturation_ScaleDownSafety(t *testing.T) {
 
 	tests := []struct {
 		name                string
-		replicaMetrics      []interfaces.ReplicaMetrics
+		replicaMetrics      []types.ReplicaMetrics
 		expectScaleDownSafe bool
 	}{
 		{
 			name: "scale down safe - adequate headroom",
-			replicaMetrics: []interfaces.ReplicaMetrics{
+			replicaMetrics: []types.ReplicaMetrics{
 				{PodName: "pod-1", VariantName: "v1", KvCacheUsage: 0.20, QueueLength: 1},
 				{PodName: "pod-2", VariantName: "v1", KvCacheUsage: 0.30, QueueLength: 1},
 				{PodName: "pod-3", VariantName: "v1", KvCacheUsage: 0.25, QueueLength: 1},
@@ -103,7 +103,7 @@ func TestAnalyzeModelSaturation_ScaleDownSafety(t *testing.T) {
 		},
 		{
 			name: "scale down unsafe - insufficient headroom",
-			replicaMetrics: []interfaces.ReplicaMetrics{
+			replicaMetrics: []types.ReplicaMetrics{
 				{PodName: "pod-1", VariantName: "v1", KvCacheUsage: 0.70, QueueLength: 2},
 				{PodName: "pod-2", VariantName: "v1", KvCacheUsage: 0.75, QueueLength: 2},
 			},
@@ -111,7 +111,7 @@ func TestAnalyzeModelSaturation_ScaleDownSafety(t *testing.T) {
 		},
 		{
 			name: "scale down unsafe - only one non-saturated replica",
-			replicaMetrics: []interfaces.ReplicaMetrics{
+			replicaMetrics: []types.ReplicaMetrics{
 				{PodName: "pod-1", VariantName: "v1", KvCacheUsage: 0.50, QueueLength: 2},
 			},
 			expectScaleDownSafe: false,
@@ -150,7 +150,7 @@ func TestAnalyzeModelSaturation_MultiVariant(t *testing.T) {
 	}
 
 	// Test with metrics from multiple variants
-	replicaMetrics := []interfaces.ReplicaMetrics{
+	replicaMetrics := []types.ReplicaMetrics{
 		// Variant 1
 		{PodName: "v1-pod-1", VariantName: "variant-1", ModelID: "model-a", KvCacheUsage: 0.70, QueueLength: 2},
 		{PodName: "v1-pod-2", VariantName: "variant-1", ModelID: "model-a", KvCacheUsage: 0.75, QueueLength: 3},
@@ -205,7 +205,7 @@ func TestAnalyzeModelSaturation_EmptyMetrics(t *testing.T) {
 		context.Background(),
 		"test-model",
 		"test-ns",
-		[]interfaces.ReplicaMetrics{},
+		[]types.ReplicaMetrics{},
 		config,
 	)
 
@@ -235,7 +235,7 @@ func TestAnalyzeVariant_SaturatedReplicas(t *testing.T) {
 		QueueSpareTrigger:    3,
 	}
 
-	metrics := []interfaces.ReplicaMetrics{
+	metrics := []types.ReplicaMetrics{
 		{PodName: "pod-1", VariantName: "v1", KvCacheUsage: 0.85, QueueLength: 2}, // Saturated (KV)
 		{PodName: "pod-2", VariantName: "v1", KvCacheUsage: 0.50, QueueLength: 6}, // Saturated (Queue)
 		{PodName: "pod-3", VariantName: "v1", KvCacheUsage: 0.60, QueueLength: 2}, // Not saturated
@@ -276,7 +276,7 @@ func TestAnalyzeModelSaturation_AllSaturated(t *testing.T) {
 	}
 
 	// All replicas are saturated
-	replicaMetrics := []interfaces.ReplicaMetrics{
+	replicaMetrics := []types.ReplicaMetrics{
 		{PodName: "pod-1", VariantName: "v1", KvCacheUsage: 0.85, QueueLength: 2}, // Saturated (KV)
 		{PodName: "pod-2", VariantName: "v1", KvCacheUsage: 0.50, QueueLength: 6}, // Saturated (Queue)
 		{PodName: "pod-3", VariantName: "v1", KvCacheUsage: 0.90, QueueLength: 7}, // Saturated (both)
@@ -334,7 +334,7 @@ func TestAnalyzeModelSaturation_TimestampSet(t *testing.T) {
 
 	before := time.Now()
 
-	replicaMetrics := []interfaces.ReplicaMetrics{
+	replicaMetrics := []types.ReplicaMetrics{
 		{PodName: "pod-1", VariantName: "v1", KvCacheUsage: 0.50, QueueLength: 2, Cost: 10},
 	}
 
@@ -368,19 +368,19 @@ func TestAnalyzeModelSaturation_TimestampSet(t *testing.T) {
 func TestCalculatesaturationTargets_ScaleUpCheapest(t *testing.T) {
 	analyzer := NewAnalyzer()
 
-	saturationAnalysis := &interfaces.ModelSaturationAnalysis{
+	saturationAnalysis := &types.ModelSaturationAnalysis{
 		ModelID:       "test-model",
 		Namespace:     "test-ns",
 		ShouldScaleUp: true,
 		ScaleUpReason: "KV spare Saturation low",
-		VariantAnalyses: []interfaces.VariantSaturationAnalysis{
+		VariantAnalyses: []types.VariantSaturationAnalysis{
 			{VariantName: "v1-expensive", Cost: 20, ReplicaCount: 2},
 			{VariantName: "v2-cheap", Cost: 5, ReplicaCount: 2},
 			{VariantName: "v3-medium", Cost: 15, ReplicaCount: 2},
 		},
 	}
 
-	variantStates := []interfaces.VariantReplicaState{
+	variantStates := []types.VariantReplicaState{
 		{VariantName: "v1-expensive", CurrentReplicas: 2, DesiredReplicas: 0},
 		{VariantName: "v2-cheap", CurrentReplicas: 2, DesiredReplicas: 0},
 		{VariantName: "v3-medium", CurrentReplicas: 2, DesiredReplicas: 0},
@@ -405,19 +405,19 @@ func TestCalculatesaturationTargets_ScaleUpCheapest(t *testing.T) {
 func TestCalculatesaturationTargets_ScaleDownMostExpensive(t *testing.T) {
 	analyzer := NewAnalyzer()
 
-	saturationAnalysis := &interfaces.ModelSaturationAnalysis{
+	saturationAnalysis := &types.ModelSaturationAnalysis{
 		ModelID:       "test-model",
 		Namespace:     "test-ns",
 		ShouldScaleUp: false,
 		ScaleDownSafe: true,
-		VariantAnalyses: []interfaces.VariantSaturationAnalysis{
+		VariantAnalyses: []types.VariantSaturationAnalysis{
 			{VariantName: "v1-expensive", Cost: 20, ReplicaCount: 2},
 			{VariantName: "v2-cheap", Cost: 5, ReplicaCount: 2},
 			{VariantName: "v3-medium", Cost: 15, ReplicaCount: 2},
 		},
 	}
 
-	variantStates := []interfaces.VariantReplicaState{
+	variantStates := []types.VariantReplicaState{
 		{VariantName: "v1-expensive", CurrentReplicas: 2, DesiredReplicas: 0},
 		{VariantName: "v2-cheap", CurrentReplicas: 2, DesiredReplicas: 0},
 		{VariantName: "v3-medium", CurrentReplicas: 2, DesiredReplicas: 0},
@@ -442,12 +442,12 @@ func TestCalculatesaturationTargets_ScaleDownMostExpensive(t *testing.T) {
 func TestCalculatesaturationTargets_ModelLevelTransitionBlocking(t *testing.T) {
 	analyzer := NewAnalyzer()
 
-	saturationAnalysis := &interfaces.ModelSaturationAnalysis{
+	saturationAnalysis := &types.ModelSaturationAnalysis{
 		ModelID:       "test-model",
 		Namespace:     "test-ns",
 		ShouldScaleUp: true,
 		ScaleUpReason: "KV spare Saturation low",
-		VariantAnalyses: []interfaces.VariantSaturationAnalysis{
+		VariantAnalyses: []types.VariantSaturationAnalysis{
 			{VariantName: "v1-expensive", Cost: 20, ReplicaCount: 2},
 			{VariantName: "v2-cheap", Cost: 5, ReplicaCount: 2},
 		},
@@ -455,7 +455,7 @@ func TestCalculatesaturationTargets_ModelLevelTransitionBlocking(t *testing.T) {
 
 	// v1 has desired > current (previous optimizer wanted to scale up)
 	// This puts the MODEL in transition state, blocking all scaling decisions
-	variantStates := []interfaces.VariantReplicaState{
+	variantStates := []types.VariantReplicaState{
 		{VariantName: "v1-expensive", CurrentReplicas: 2, DesiredReplicas: 4},
 		{VariantName: "v2-cheap", CurrentReplicas: 2, DesiredReplicas: 0},
 	}
@@ -477,12 +477,12 @@ func TestCalculatesaturationTargets_ModelLevelTransitionBlocking(t *testing.T) {
 func TestCalculatesaturationTargets_MetricsMismatchBlocksScaling(t *testing.T) {
 	analyzer := NewAnalyzer()
 
-	saturationAnalysis := &interfaces.ModelSaturationAnalysis{
+	saturationAnalysis := &types.ModelSaturationAnalysis{
 		ModelID:       "test-model",
 		Namespace:     "test-ns",
 		ShouldScaleUp: true,
 		ScaleUpReason: "KV spare Saturation low",
-		VariantAnalyses: []interfaces.VariantSaturationAnalysis{
+		VariantAnalyses: []types.VariantSaturationAnalysis{
 			// v1 has 3 replicas but only 2 are reporting metrics
 			{VariantName: "v1-expensive", Cost: 20, ReplicaCount: 2},
 			{VariantName: "v2-cheap", Cost: 5, ReplicaCount: 2},
@@ -491,7 +491,7 @@ func TestCalculatesaturationTargets_MetricsMismatchBlocksScaling(t *testing.T) {
 
 	// v1 has metrics(2) != current(3) - some pods not reporting yet
 	// This puts the MODEL in transition state
-	variantStates := []interfaces.VariantReplicaState{
+	variantStates := []types.VariantReplicaState{
 		{VariantName: "v1-expensive", CurrentReplicas: 3, DesiredReplicas: 0},
 		{VariantName: "v2-cheap", CurrentReplicas: 2, DesiredReplicas: 0},
 	}

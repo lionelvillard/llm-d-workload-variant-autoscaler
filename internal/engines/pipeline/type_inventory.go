@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/discovery"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // normalizeAcceleratorName converts a full GPU model name to a short name.
@@ -339,7 +339,7 @@ type typeAllocator struct {
 // The accelerator type is determined from the decision's AcceleratorName field.
 // Returns the actual GPUs allocated (may be less than requested if the type's
 // pool is exhausted).
-func (a *typeAllocator) TryAllocate(decision *interfaces.VariantDecision, gpusRequested int) (int, error) {
+func (a *typeAllocator) TryAllocate(decision *types.VariantDecision, gpusRequested int) (int, error) {
 	if gpusRequested <= 0 {
 		return 0, nil
 	}

@@ -2,10 +2,10 @@ package queueingmodel
 
 import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/analyzers/queueingmodel/tuner"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
-// QMConfig implements interfaces.AnalyzerConfig
+// QMConfig implements types.AnalyzerConfig
 type QMConfig struct {
 	// SLOTargets maps (modelID, namespace) to SLO targets
 	// Key format: "namespace/modelID"
@@ -36,9 +36,9 @@ type SLOTarget struct {
 	TargetITL  float32 // Target inter-token latency (ms)
 }
 
-// GetAnalyzerName implements interfaces.AnalyzerConfig
+// GetAnalyzerName implements types.AnalyzerConfig
 func (c *QMConfig) GetAnalyzerName() string {
-	return interfaces.QueueingModelAnalyzerName
+	return types.QueueingModelAnalyzerName
 }
 
 // GetSLOForModel retrieves SLO targets for a model in a namespace

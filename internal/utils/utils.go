@@ -14,8 +14,8 @@ import (
 	"github.com/prometheus/common/model"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
-	interfaces "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 	infernoConfig "github.com/llm-d/llm-d-workload-variant-autoscaler/pkg/config"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
@@ -161,7 +161,7 @@ func CreateSystemData(
 	// get service class data
 	serviceClassData := []infernoConfig.ServiceClassSpec{}
 	for key, val := range serviceClassCm {
-		var sc interfaces.ServiceClass
+		var sc types.ServiceClass
 		if err := yaml.Unmarshal([]byte(val), &sc); err != nil {
 			ctrl.Log.Info("failed to parse service class data, skipping service class", "key", key, "err", err)
 			continue
@@ -204,14 +204,14 @@ func CreateSystemData(
 func AddServerInfoToSystemData(
 	sd *infernoConfig.SystemData,
 	va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
-	currentAlloc *interfaces.Allocation,
+	currentAlloc *types.Allocation,
 	className string) (err error) {
 
 	// server load statistics
 	var arrivalRate, avgOutputTokens, avgInputTokens, cost, itlAverage, ttftAverage float64
 	if currentAlloc == nil {
 		// Use empty/default values if no current allocation
-		currentAlloc = &interfaces.Allocation{}
+		currentAlloc = &types.Allocation{}
 	}
 
 	if arrivalRate, err = strconv.ParseFloat(currentAlloc.Load.ArrivalRate, 32); err != nil || !CheckValue(arrivalRate) {
@@ -350,9 +350,9 @@ func MarshalStructToJsonString(t any) string {
 }
 
 // Helper to find SLOs for a model variant
-func FindModelSLO(cmData map[string]string, targetModel string) (*interfaces.ServiceClassEntry, string /* class name */, error) {
+func FindModelSLO(cmData map[string]string, targetModel string) (*types.ServiceClassEntry, string /* class name */, error) {
 	for key, val := range cmData {
-		var sc interfaces.ServiceClass
+		var sc types.ServiceClass
 		if err := yaml.Unmarshal([]byte(val), &sc); err != nil {
 			return nil, "", fmt.Errorf("failed to parse %s: %w", key, err)
 		}

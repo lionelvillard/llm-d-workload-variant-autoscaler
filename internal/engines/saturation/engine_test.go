@@ -34,8 +34,8 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/source"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/source/prometheus"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
-	interfaces "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 	utils "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils"
 	testutils "github.com/llm-d/llm-d-workload-variant-autoscaler/test/utils"
 )
@@ -257,17 +257,17 @@ data:
 				"variant-c": 2,
 			}
 
-			saturationAnalysis := &interfaces.ModelSaturationAnalysis{
+			saturationAnalysis := &types.ModelSaturationAnalysis{
 				ModelID:   "test-model",
 				Namespace: "test-ns",
-				VariantAnalyses: []interfaces.VariantSaturationAnalysis{
+				VariantAnalyses: []types.VariantSaturationAnalysis{
 					{VariantName: "variant-a", AcceleratorName: "A100", Cost: 10.0},
 					{VariantName: "variant-b", AcceleratorName: "A100", Cost: 10.0},
 					{VariantName: "variant-c", AcceleratorName: "A100", Cost: 10.0},
 				},
 			}
 
-			variantStates := []interfaces.VariantReplicaState{
+			variantStates := []types.VariantReplicaState{
 				{VariantName: "variant-a", CurrentReplicas: 3, DesiredReplicas: 3},
 				{VariantName: "variant-b", CurrentReplicas: 3, DesiredReplicas: 3},
 				{VariantName: "variant-c", CurrentReplicas: 2, DesiredReplicas: 2},
@@ -285,15 +285,15 @@ data:
 			Expect(len(decisions)).To(Equal(3), "All 3 variants should have decisions including ActionNoChange")
 
 			By("Verifying ActionNoChange decisions are present")
-			decisionMap := make(map[string]interfaces.VariantDecision)
+			decisionMap := make(map[string]types.VariantDecision)
 			for _, d := range decisions {
 				decisionMap[d.VariantName] = d
 			}
 
 			Expect(decisionMap).To(HaveKey("variant-a"))
-			Expect(decisionMap["variant-a"].Action).To(Equal(interfaces.ActionNoChange))
-			Expect(decisionMap["variant-b"].Action).To(Equal(interfaces.ActionScaleUp))
-			Expect(decisionMap["variant-c"].Action).To(Equal(interfaces.ActionNoChange))
+			Expect(decisionMap["variant-a"].Action).To(Equal(types.ActionNoChange))
+			Expect(decisionMap["variant-b"].Action).To(Equal(types.ActionScaleUp))
+			Expect(decisionMap["variant-c"].Action).To(Equal(types.ActionNoChange))
 		})
 	})
 
