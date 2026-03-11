@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
-// SaturationAnalyzer implements the interfaces.Analyzer interface using a
+// SaturationAnalyzer implements the types.Analyzer interface using a
 // token-based capacity model with memory-bound (k1) and compute-bound (k2)
 // constraints. It replaces the V1 percentage-based analyzer when
 // analyzerName is set to "saturation".
@@ -57,7 +57,7 @@ func (a *SaturationAnalyzer) EvictStaleHistory(timeout time.Duration) int {
 }
 
 // Analyze computes capacity signals for a model across all its variants.
-func (a *SaturationAnalyzer) Analyze(ctx context.Context, input interfaces.AnalyzerInput) (*interfaces.AnalyzerResult, error) {
+func (a *SaturationAnalyzer) Analyze(ctx context.Context, input types.AnalyzerInput) (*types.AnalyzerResult, error) {
 	satConfig, ok := input.Config.(*config.SaturationScalingConfig)
 	if !ok {
 		return nil, fmt.Errorf("expected *SaturationScalingConfig, got %T", input.Config)
@@ -133,7 +133,7 @@ func (a *SaturationAnalyzer) Analyze(ctx context.Context, input interfaces.Analy
 	roleCapacities := a.aggregateByRole(variantCapacities, satConfig, queueDemand.byRole)
 
 	// Phase 5: Build result
-	result := &interfaces.AnalyzerResult{
+	result := &types.AnalyzerResult{
 		AnalyzerName:      a.Name(),
 		ModelID:           input.ModelID,
 		Namespace:         input.Namespace,
@@ -153,7 +153,7 @@ func (a *SaturationAnalyzer) Analyze(ctx context.Context, input interfaces.Analy
 // computeReplicaCapacity computes the capacity breakdown for a single replica.
 // Returns nil if the replica has no V2 capacity data (TotalKvCapacityTokens == 0).
 func (a *SaturationAnalyzer) computeReplicaCapacity(
-	rm interfaces.ReplicaMetrics,
+	rm types.ReplicaMetrics,
 	config *config.SaturationScalingConfig,
 	modelID, namespace string,
 	gpuCount int,
@@ -278,11 +278,11 @@ func (a *SaturationAnalyzer) computeK2(
 // per-variant capacity metrics.
 func (a *SaturationAnalyzer) aggregateByVariant(
 	replicaCapacities []ReplicaCapacity,
-	inputMetrics []interfaces.ReplicaMetrics,
-	variantStates []interfaces.VariantReplicaState,
+	inputMetrics []types.ReplicaMetrics,
+	variantStates []types.VariantReplicaState,
 	modelID, namespace string,
 	kvCacheThreshold float64,
-) []interfaces.VariantCapacity {
+) []types.VariantCapacity {
 	// Group replicas by variant
 	byVariant := make(map[string][]ReplicaCapacity)
 	for _, rc := range replicaCapacities {
@@ -303,7 +303,7 @@ func (a *SaturationAnalyzer) aggregateByVariant(
 	// Used for capacity estimation of zero-replica variants with deployment-derived params.
 	modelAvgInput, modelAvgOutput, _ := computeModelWorkloadAverages(inputMetrics)
 
-	result := make([]interfaces.VariantCapacity, 0, len(variantStates))
+	result := make([]types.VariantCapacity, 0, len(variantStates))
 	for _, vs := range variantStates {
 		replicas := byVariant[vs.VariantName]
 
@@ -344,7 +344,7 @@ func (a *SaturationAnalyzer) aggregateByVariant(
 			utilization = totalDemand / totalCapacity
 		}
 
-		vc := interfaces.VariantCapacity{
+		vc := types.VariantCapacity{
 			VariantName:        vs.VariantName,
 			AcceleratorName:    accelerator,
 			Cost:               cost,
@@ -367,10 +367,10 @@ func (a *SaturationAnalyzer) aggregateByVariant(
 // are role "both" or empty). The queueDemandByRole map adds scheduler queue
 // demand attributed to each role (nil when there's no queue demand).
 func (a *SaturationAnalyzer) aggregateByRole(
-	variantCapacities []interfaces.VariantCapacity,
+	variantCapacities []types.VariantCapacity,
 	config *config.SaturationScalingConfig,
 	queueDemandByRole map[string]float64,
-) map[string]interfaces.RoleCapacity {
+) map[string]types.RoleCapacity {
 	// Check if any variant has a non-"both" role
 	hasDisaggregation := false
 	for _, vc := range variantCapacities {
@@ -416,7 +416,7 @@ func (a *SaturationAnalyzer) aggregateByRole(
 	}
 
 	// Compute per-role scaling signals
-	result := make(map[string]interfaces.RoleCapacity, len(roles))
+	result := make(map[string]types.RoleCapacity, len(roles))
 	for role, ra := range roles {
 		var required, spare float64
 		if config.ScaleUpThreshold > 0 {
@@ -431,7 +431,7 @@ func (a *SaturationAnalyzer) aggregateByRole(
 		if spare < 0 {
 			spare = 0
 		}
-		result[role] = interfaces.RoleCapacity{
+		result[role] = types.RoleCapacity{
 			Role:             role,
 			TotalSupply:      ra.supply,
 			TotalDemand:      ra.demand,
@@ -534,7 +534,7 @@ func estimateCapacityFromParams(params *VLLMEngineParams, avgInput, avgOutput fl
 // output tokens, and prefix cache hit rate from replica metrics across all
 // variants. These averages enable capacity estimation for zero-replica variants
 // using the k2 derivation formula, and scheduler queue demand estimation.
-func computeModelWorkloadAverages(replicaMetrics []interfaces.ReplicaMetrics) (avgInput, avgOutput, avgHitRate float64) {
+func computeModelWorkloadAverages(replicaMetrics []types.ReplicaMetrics) (avgInput, avgOutput, avgHitRate float64) {
 	var count int
 	for _, rm := range replicaMetrics {
 		if rm.AvgInputTokens > 0 || rm.AvgOutputTokens > 0 {
@@ -581,8 +581,8 @@ type schedulerQueueDemand struct {
 // KV blocks. This does NOT apply to the local vLLM queue (num_requests_waiting)
 // because those requests have not yet had prefix cache lookup performed.
 func estimateSchedulerQueueDemand(
-	sq *interfaces.SchedulerQueueMetrics,
-	replicaMetrics []interfaces.ReplicaMetrics,
+	sq *types.SchedulerQueueMetrics,
+	replicaMetrics []types.ReplicaMetrics,
 	activeRoles map[string]bool,
 ) schedulerQueueDemand {
 	if sq == nil || (sq.QueueSize == 0 && sq.QueueBytes == 0) {

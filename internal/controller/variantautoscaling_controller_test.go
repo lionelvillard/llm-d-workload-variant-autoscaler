@@ -37,8 +37,8 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/datastore"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/common"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
+	wtypes "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 	testutils "github.com/llm-d/llm-d-workload-variant-autoscaler/test/utils"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/test/utils/resources"
 )
@@ -445,7 +445,7 @@ var _ = Describe("VariantAutoscalings Controller", func() {
 		It("should handle partial decision without validation error", func() {
 			By("Storing a partial decision in cache (no accelerator)")
 			// Create a partial decision with only metrics status, no accelerator info
-			partialDecision := interfaces.VariantDecision{
+			partialDecision := wtypes.VariantDecision{
 				VariantName:      resourceName,
 				Namespace:        "default",
 				MetricsAvailable: false,

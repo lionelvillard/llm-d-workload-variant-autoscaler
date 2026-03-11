@@ -1,4 +1,4 @@
-package interfaces
+package types
 
 import inferno "github.com/llm-d/llm-d-workload-variant-autoscaler/pkg/core"
 

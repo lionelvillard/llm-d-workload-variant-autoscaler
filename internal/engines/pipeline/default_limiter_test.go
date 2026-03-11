@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // mockInventory implements Inventory for testing
@@ -80,7 +80,7 @@ type mockTypeAllocator struct {
 	availableByType map[string]int
 }
 
-func (m *mockTypeAllocator) TryAllocate(decision *interfaces.VariantDecision, gpusRequested int) (int, error) {
+func (m *mockTypeAllocator) TryAllocate(decision *types.VariantDecision, gpusRequested int) (int, error) {
 	accelType := decision.AcceleratorName
 	if accelType == "" {
 		accelType = "default"
@@ -108,14 +108,14 @@ func (m *mockTypeAllocator) Remaining() int {
 // mockAlgorithm implements AllocationAlgorithm for testing
 type mockAlgorithm struct {
 	name         string
-	allocateFunc func(ctx context.Context, decisions []*interfaces.VariantDecision, allocator ResourceAllocator) error
+	allocateFunc func(ctx context.Context, decisions []*types.VariantDecision, allocator ResourceAllocator) error
 }
 
 func (m *mockAlgorithm) Name() string {
 	return m.name
 }
 
-func (m *mockAlgorithm) Allocate(ctx context.Context, decisions []*interfaces.VariantDecision, allocator ResourceAllocator) error {
+func (m *mockAlgorithm) Allocate(ctx context.Context, decisions []*types.VariantDecision, allocator ResourceAllocator) error {
 	if m.allocateFunc != nil {
 		return m.allocateFunc(ctx, decisions, allocator)
 	}
@@ -128,7 +128,7 @@ var _ = Describe("DefaultLimiter", func() {
 		limiter   *DefaultLimiter
 		inventory *mockInventory
 		algorithm *mockAlgorithm
-		decisions []*interfaces.VariantDecision
+		decisions []*types.VariantDecision
 	)
 
 	BeforeEach(func() {
@@ -152,7 +152,7 @@ var _ = Describe("DefaultLimiter", func() {
 				algorithm = &mockAlgorithm{name: "algo"}
 				limiter = NewDefaultLimiter("limiter", inventory, algorithm)
 
-				err := limiter.Limit(ctx, []*interfaces.VariantDecision{})
+				err := limiter.Limit(ctx, []*types.VariantDecision{})
 				Expect(err).NotTo(HaveOccurred())
 			})
 		})
@@ -162,7 +162,7 @@ var _ = Describe("DefaultLimiter", func() {
 				inventory = newMockInventory("type-inv", map[string]int{"A100": 8})
 				algorithm = &mockAlgorithm{
 					name: "pass-through",
-					allocateFunc: func(ctx context.Context, decisions []*interfaces.VariantDecision, allocator ResourceAllocator) error {
+					allocateFunc: func(ctx context.Context, decisions []*types.VariantDecision, allocator ResourceAllocator) error {
 						for _, d := range decisions {
 							if d.TargetReplicas > d.CurrentReplicas {
 								gpusNeeded := (d.TargetReplicas - d.CurrentReplicas) * d.GPUsPerReplica
@@ -175,7 +175,7 @@ var _ = Describe("DefaultLimiter", func() {
 				}
 				limiter = NewDefaultLimiter("gpu-limiter", inventory, algorithm)
 
-				decisions = []*interfaces.VariantDecision{
+				decisions = []*types.VariantDecision{
 					{
 						VariantName:     "v1",
 						AcceleratorName: "A100",
@@ -218,7 +218,7 @@ var _ = Describe("DefaultLimiter", func() {
 				inventory = newMockInventory("type-inv", map[string]int{"A100": 6})
 				algorithm = &mockAlgorithm{
 					name: "partial-alloc",
-					allocateFunc: func(ctx context.Context, decisions []*interfaces.VariantDecision, allocator ResourceAllocator) error {
+					allocateFunc: func(ctx context.Context, decisions []*types.VariantDecision, allocator ResourceAllocator) error {
 						for _, d := range decisions {
 							if d.TargetReplicas > d.CurrentReplicas {
 								replicasNeeded := d.TargetReplicas - d.CurrentReplicas
@@ -242,7 +242,7 @@ var _ = Describe("DefaultLimiter", func() {
 				}
 				limiter = NewDefaultLimiter("gpu-limiter", inventory, algorithm)
 
-				decisions = []*interfaces.VariantDecision{
+				decisions = []*types.VariantDecision{
 					{
 						VariantName:     "v1",
 						AcceleratorName: "A100",
@@ -279,7 +279,7 @@ var _ = Describe("DefaultLimiter", func() {
 				})
 				algorithm = &mockAlgorithm{
 					name: "multi-type",
-					allocateFunc: func(ctx context.Context, decisions []*interfaces.VariantDecision, allocator ResourceAllocator) error {
+					allocateFunc: func(ctx context.Context, decisions []*types.VariantDecision, allocator ResourceAllocator) error {
 						for _, d := range decisions {
 							if d.TargetReplicas > d.CurrentReplicas {
 								gpusNeeded := (d.TargetReplicas - d.CurrentReplicas) * d.GPUsPerReplica
@@ -292,7 +292,7 @@ var _ = Describe("DefaultLimiter", func() {
 				}
 				limiter = NewDefaultLimiter("gpu-limiter", inventory, algorithm)
 
-				decisions = []*interfaces.VariantDecision{
+				decisions = []*types.VariantDecision{
 					{
 						VariantName:     "v1-a100",
 						AcceleratorName: "A100",

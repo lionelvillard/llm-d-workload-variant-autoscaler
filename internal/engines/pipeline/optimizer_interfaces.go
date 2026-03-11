@@ -3,7 +3,7 @@ package pipeline
 import (
 	"context"
 
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // ModelScalingRequest bundles the analyzer result with variant state for one model.
@@ -11,8 +11,8 @@ import (
 type ModelScalingRequest struct {
 	ModelID       string
 	Namespace     string
-	Result        *interfaces.AnalyzerResult
-	VariantStates []interfaces.VariantReplicaState
+	Result        *types.AnalyzerResult
+	VariantStates []types.VariantReplicaState
 	Priority      float64 // Model priority (default 1.0)
 	Disaggregated bool    // true when model has prefill+decode variants
 }
@@ -28,5 +28,5 @@ type ScalingOptimizer interface {
 
 	// Optimize produces VariantDecisions from analyzer results and optional constraints.
 	// constraints may be nil in unlimited mode.
-	Optimize(ctx context.Context, requests []ModelScalingRequest, constraints []*ResourceConstraints) []interfaces.VariantDecision
+	Optimize(ctx context.Context, requests []ModelScalingRequest, constraints []*ResourceConstraints) []types.VariantDecision
 }

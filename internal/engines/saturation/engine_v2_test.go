@@ -10,7 +10,7 @@ import (
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/pipeline"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 var _ = Describe("V2 Engine Integration", func() {
@@ -23,16 +23,16 @@ var _ = Describe("V2 Engine Integration", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						ModelID:          "model-1",
 						Namespace:        "default",
 						RequiredCapacity: 5000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "variant-cheap", AcceleratorName: "A100", Cost: 5.0, ReplicaCount: 2, PerReplicaCapacity: 10000},
 							{VariantName: "variant-expensive", AcceleratorName: "H100", Cost: 15.0, ReplicaCount: 1, PerReplicaCapacity: 20000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "variant-cheap", CurrentReplicas: 2},
 						{VariantName: "variant-expensive", CurrentReplicas: 1},
 					},
@@ -54,16 +54,16 @@ var _ = Describe("V2 Engine Integration", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						ModelID:       "model-1",
 						Namespace:     "default",
 						SpareCapacity: 25000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "variant-cheap", Cost: 5.0, ReplicaCount: 3, PerReplicaCapacity: 10000},
 							{VariantName: "variant-expensive", Cost: 15.0, ReplicaCount: 2, PerReplicaCapacity: 20000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "variant-cheap", CurrentReplicas: 3},
 						{VariantName: "variant-expensive", CurrentReplicas: 2},
 					},
@@ -83,16 +83,16 @@ var _ = Describe("V2 Engine Integration", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						ModelID:       "model-1",
 						Namespace:     "default",
 						SpareCapacity: 30000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "variant-expensive", Cost: 15.0, ReplicaCount: 1, PerReplicaCapacity: 20000},
 							{VariantName: "variant-cheap", Cost: 5.0, ReplicaCount: 1, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "variant-expensive", CurrentReplicas: 1},
 						{VariantName: "variant-cheap", CurrentReplicas: 1},
 					},
@@ -112,16 +112,16 @@ var _ = Describe("V2 Engine Integration", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						ModelID:          "model-1",
 						Namespace:        "default",
 						RequiredCapacity: 5000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "variant-cheap", Cost: 5.0, ReplicaCount: 2, PerReplicaCapacity: 10000},
 							{VariantName: "variant-mid", Cost: 10.0, ReplicaCount: 1, PerReplicaCapacity: 15000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "variant-cheap", CurrentReplicas: 2, PendingReplicas: 1},
 						{VariantName: "variant-mid", CurrentReplicas: 1},
 					},
@@ -233,8 +233,8 @@ var _ = Describe("resolveSaturationConfig", func() {
 	})
 })
 
-func decisionsByVariant(decisions []interfaces.VariantDecision) map[string]interfaces.VariantDecision {
-	m := make(map[string]interfaces.VariantDecision, len(decisions))
+func decisionsByVariant(decisions []types.VariantDecision) map[string]types.VariantDecision {
+	m := make(map[string]types.VariantDecision, len(decisions))
 	for _, d := range decisions {
 		m[d.VariantName] = d
 	}

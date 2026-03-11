@@ -8,8 +8,8 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // CostAwareOptimizer is a per-model optimizer that minimizes total cost while
@@ -40,9 +40,9 @@ func (o *CostAwareOptimizer) Optimize(
 	ctx context.Context,
 	requests []ModelScalingRequest,
 	constraints []*ResourceConstraints,
-) []interfaces.VariantDecision {
+) []types.VariantDecision {
 	logger := ctrl.LoggerFrom(ctx).WithName(o.Name())
-	var allDecisions []interfaces.VariantDecision
+	var allDecisions []types.VariantDecision
 
 	for _, req := range requests {
 		if req.Result == nil {
@@ -75,7 +75,7 @@ func (o *CostAwareOptimizer) Optimize(
 // spills over to the next variant.
 func costAwareScaleUp(
 	ctx context.Context,
-	result *interfaces.AnalyzerResult,
+	result *types.AnalyzerResult,
 	targets map[string]int,
 	stateMap map[string]interfaces.VariantReplicaState,
 ) {
@@ -124,7 +124,7 @@ func costAwareScaleUp(
 // per-replica capacity exceeds spare but cheaper replicas could be removed.
 func costAwareScaleDown(
 	ctx context.Context,
-	result *interfaces.AnalyzerResult,
+	result *types.AnalyzerResult,
 	targets map[string]int,
 	stateMap ...map[string]interfaces.VariantReplicaState,
 ) {
@@ -196,8 +196,8 @@ func costAwareScaleDown(
 }
 
 // buildStateMap creates a lookup map from variant name to VariantReplicaState.
-func buildStateMap(states []interfaces.VariantReplicaState) map[string]interfaces.VariantReplicaState {
-	m := make(map[string]interfaces.VariantReplicaState, len(states))
+func buildStateMap(states []types.VariantReplicaState) map[string]types.VariantReplicaState {
+	m := make(map[string]types.VariantReplicaState, len(states))
 	for _, s := range states {
 		m[s.VariantName] = s
 	}
@@ -205,8 +205,8 @@ func buildStateMap(states []interfaces.VariantReplicaState) map[string]interface
 }
 
 // buildCapacityMap creates a lookup map from variant name to VariantCapacity.
-func buildCapacityMap(capacities []interfaces.VariantCapacity) map[string]interfaces.VariantCapacity {
-	m := make(map[string]interfaces.VariantCapacity, len(capacities))
+func buildCapacityMap(capacities []types.VariantCapacity) map[string]types.VariantCapacity {
+	m := make(map[string]types.VariantCapacity, len(capacities))
 	for _, vc := range capacities {
 		m[vc.VariantName] = vc
 	}
@@ -214,7 +214,7 @@ func buildCapacityMap(capacities []interfaces.VariantCapacity) map[string]interf
 }
 
 // initTargets creates initial targets from current replica counts.
-func initTargets(states []interfaces.VariantReplicaState) map[string]int {
+func initTargets(states []types.VariantReplicaState) map[string]int {
 	targets := make(map[string]int, len(states))
 	for _, s := range states {
 		targets[s.VariantName] = s.CurrentReplicas
@@ -223,7 +223,7 @@ func initTargets(states []interfaces.VariantReplicaState) map[string]int {
 }
 
 // findCheapestVariant returns the variant name with the lowest cost.
-func findCheapestVariant(capacities []interfaces.VariantCapacity) string {
+func findCheapestVariant(capacities []types.VariantCapacity) string {
 	cheapest := ""
 	minCost := math.MaxFloat64
 	for _, vc := range capacities {
@@ -236,8 +236,8 @@ func findCheapestVariant(capacities []interfaces.VariantCapacity) string {
 }
 
 // sortByCostEfficiencyAsc returns variants sorted by cost/perReplicaCapacity ascending.
-func sortByCostEfficiencyAsc(capacities []interfaces.VariantCapacity) []interfaces.VariantCapacity {
-	sorted := make([]interfaces.VariantCapacity, len(capacities))
+func sortByCostEfficiencyAsc(capacities []types.VariantCapacity) []types.VariantCapacity {
+	sorted := make([]types.VariantCapacity, len(capacities))
 	copy(sorted, capacities)
 	sort.Slice(sorted, func(i, j int) bool {
 		return costEfficiency(sorted[i]) < costEfficiency(sorted[j])
@@ -246,8 +246,8 @@ func sortByCostEfficiencyAsc(capacities []interfaces.VariantCapacity) []interfac
 }
 
 // sortByCostDesc returns variants sorted by absolute cost descending.
-func sortByCostDesc(capacities []interfaces.VariantCapacity) []interfaces.VariantCapacity {
-	sorted := make([]interfaces.VariantCapacity, len(capacities))
+func sortByCostDesc(capacities []types.VariantCapacity) []types.VariantCapacity {
+	sorted := make([]types.VariantCapacity, len(capacities))
 	copy(sorted, capacities)
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].Cost > sorted[j].Cost
@@ -256,7 +256,7 @@ func sortByCostDesc(capacities []interfaces.VariantCapacity) []interfaces.Varian
 }
 
 // costEfficiency returns the cost per unit of capacity.
-func costEfficiency(vc interfaces.VariantCapacity) float64 {
+func costEfficiency(vc types.VariantCapacity) float64 {
 	if vc.PerReplicaCapacity <= 0 {
 		return math.MaxFloat64
 	}
@@ -267,31 +267,31 @@ func costEfficiency(vc interfaces.VariantCapacity) float64 {
 // optimizerName is included in reason strings for observability.
 func buildDecisionsWithOptimizer(
 	req ModelScalingRequest,
-	stateMap map[string]interfaces.VariantReplicaState,
-	vcMap map[string]interfaces.VariantCapacity,
+	stateMap map[string]types.VariantReplicaState,
+	vcMap map[string]types.VariantCapacity,
 	targets map[string]int,
 	optimizerName string,
-) []interfaces.VariantDecision {
-	decisions := make([]interfaces.VariantDecision, 0, len(targets))
+) []types.VariantDecision {
+	decisions := make([]types.VariantDecision, 0, len(targets))
 	for name, target := range targets {
 		state := stateMap[name]
 		vc := vcMap[name]
 
-		var action interfaces.SaturationAction
+		var action types.SaturationAction
 		var reason string
 		switch {
 		case target > state.CurrentReplicas:
-			action = interfaces.ActionScaleUp
+			action = types.ActionScaleUp
 			reason = fmt.Sprintf("V2 scale-up (optimizer: %s, required: %.0f)", optimizerName, req.Result.RequiredCapacity)
 		case target < state.CurrentReplicas:
-			action = interfaces.ActionScaleDown
+			action = types.ActionScaleDown
 			reason = fmt.Sprintf("V2 scale-down (optimizer: %s, spare: %.0f)", optimizerName, req.Result.SpareCapacity)
 		default:
-			action = interfaces.ActionNoChange
+			action = types.ActionNoChange
 			reason = "V2 steady state"
 		}
 
-		decisions = append(decisions, interfaces.VariantDecision{
+		decisions = append(decisions, types.VariantDecision{
 			VariantName:     name,
 			ModelID:         req.ModelID,
 			Namespace:       req.Namespace,

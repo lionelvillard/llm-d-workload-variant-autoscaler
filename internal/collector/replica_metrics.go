@@ -38,9 +38,9 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/registration"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/source"
 	saturation_v2 "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/analyzers/saturation_v2"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/saturation"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils"
 )
 
@@ -78,7 +78,7 @@ func NewReplicaMetricsCollector(metricsSource source.MetricsSource, k8sClient cl
 //   - variantCosts: Map of VariantAutoscaling namespace/name to cost value
 //
 // Returns:
-//   - []interfaces.ReplicaMetrics: Per-pod metrics for saturation and queueing model analysis
+//   - []types.ReplicaMetrics: Per-pod metrics for saturation and queueing model analysis
 //   - error: Any error that occurred during collection
 func (c *ReplicaMetricsCollector) CollectReplicaMetrics(
 	ctx context.Context,
@@ -87,7 +87,7 @@ func (c *ReplicaMetricsCollector) CollectReplicaMetrics(
 	deployments map[string]*appsv1.Deployment,
 	variantAutoscalings map[string]*llmdVariantAutoscalingV1alpha1.VariantAutoscaling,
 	variantCosts map[string]float64,
-) ([]interfaces.ReplicaMetrics, error) {
+) ([]types.ReplicaMetrics, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
 	params := map[string]string{
@@ -402,7 +402,7 @@ func (c *ReplicaMetricsCollector) CollectReplicaMetrics(
 	}
 
 	// Build replica metrics from pod data
-	replicaMetrics := make([]interfaces.ReplicaMetrics, 0, len(podData))
+	replicaMetrics := make([]types.ReplicaMetrics, 0, len(podData))
 	collectedAt := time.Now()
 
 	for podName, data := range podData {
@@ -494,7 +494,7 @@ func (c *ReplicaMetricsCollector) CollectReplicaMetrics(
 			logger.Info("Pod has vLLM metrics but no dispatch rate — possible pod/pod_name label mismatch", "pod", podName, "model", modelID, "namespace", namespace)
 		}
 
-		metric := interfaces.ReplicaMetrics{
+		metric := types.ReplicaMetrics{
 			PodName:               podName,
 			ModelID:               modelID,
 			Namespace:             namespace,
@@ -514,7 +514,7 @@ func (c *ReplicaMetricsCollector) CollectReplicaMetrics(
 			MaxBatchSize:          maxBatchSize,
 			AvgTTFT:               data.avgTTFT,
 			AvgITL:                data.avgITL,
-			Metadata: &interfaces.ReplicaMetricsMetadata{
+			Metadata: &types.ReplicaMetricsMetadata{
 				CollectedAt:     collectedAt,
 				Age:             0, // Fresh
 				FreshnessStatus: "fresh",
@@ -539,7 +539,7 @@ func (c *ReplicaMetricsCollector) CollectReplicaMetrics(
 func (c *ReplicaMetricsCollector) CollectSchedulerQueueMetrics(
 	ctx context.Context,
 	modelID string,
-) *interfaces.SchedulerQueueMetrics {
+) *types.SchedulerQueueMetrics {
 	logger := ctrl.LoggerFrom(ctx)
 
 	params := map[string]string{
@@ -591,7 +591,7 @@ func (c *ReplicaMetricsCollector) CollectSchedulerQueueMetrics(
 		"queueSize", queueSize,
 		"queueBytes", queueBytes)
 
-	return &interfaces.SchedulerQueueMetrics{
+	return &types.SchedulerQueueMetrics{
 		QueueSize:  queueSize,
 		QueueBytes: queueBytes,
 	}
