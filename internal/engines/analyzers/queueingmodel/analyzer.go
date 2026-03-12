@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/analyzers/queueingmodel/tuner"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/pkg/analyzer"
@@ -32,7 +33,7 @@ func NewQueueingModelAnalyzer() *QueueingModelAnalyzer {
 
 // Name implements types.Analyzer.
 func (a *QueueingModelAnalyzer) Name() string {
-	return types.QueueingModelAnalyzerName
+	return config.QueueingModelAnalyzerName
 }
 
 // Update deletes non-existing models from paramStore[models]
