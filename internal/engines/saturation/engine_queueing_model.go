@@ -7,6 +7,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
 	queueingmodel "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/analyzers/queueingmodel"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/pipeline"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
@@ -146,7 +147,7 @@ func (e *Engine) runQueueingModelAnalysis(
 // sloMultiplier, tuningEnabled, and provide explicit SLO targets (targetTTFT/targetITL).
 // Falls back to defaults when fields are zero/nil.
 func buildQMConfig(
-	allConfigs map[string]types.QueueingModelScalingConfig,
+	allConfigs map[string]config.QueueingModelScalingConfig,
 	namespace, modelID string,
 ) *queueingmodel.QMConfig {
 	cfg := &queueingmodel.QMConfig{

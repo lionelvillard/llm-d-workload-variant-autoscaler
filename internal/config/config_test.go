@@ -8,8 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // TestConfig_ThreadSafeUpdates tests that concurrent reads and writes to DynamicConfig
@@ -503,7 +501,7 @@ func TestQMAnalyzerConfig_GlobalGetSet(t *testing.T) {
 
 	// Set global config
 	cfg.UpdateQMAnalyzerConfig(QMAnalyzerConfigPerModel{
-		"default": types.QueueingModelScalingConfig{SLOMultiplier: 3.0},
+		"default": QueueingModelScalingConfig{SLOMultiplier: 3.0},
 	})
 
 	qmCfg = cfg.QMAnalyzerConfig()
@@ -519,11 +517,11 @@ func TestQMAnalyzerConfig_NamespaceOverride(t *testing.T) {
 	cfg := NewTestConfig()
 
 	cfg.UpdateQMAnalyzerConfig(QMAnalyzerConfigPerModel{
-		"default": types.QueueingModelScalingConfig{SLOMultiplier: 3.0},
+		"default": QueueingModelScalingConfig{SLOMultiplier: 3.0},
 	})
 
 	cfg.UpdateQMAnalyzerConfigForNamespace("prod", QMAnalyzerConfigPerModel{
-		"default": types.QueueingModelScalingConfig{SLOMultiplier: 5.0},
+		"default": QueueingModelScalingConfig{SLOMultiplier: 5.0},
 	})
 
 	global := cfg.QMAnalyzerConfig()
@@ -545,11 +543,11 @@ func TestQMAnalyzerConfig_NamespaceOverride(t *testing.T) {
 func TestQMAnalyzerConfig_ReturnsCopy(t *testing.T) {
 	cfg := NewTestConfig()
 	cfg.UpdateQMAnalyzerConfig(QMAnalyzerConfigPerModel{
-		"default": types.QueueingModelScalingConfig{SLOMultiplier: 3.0},
+		"default": QueueingModelScalingConfig{SLOMultiplier: 3.0},
 	})
 
 	copy1 := cfg.QMAnalyzerConfig()
-	copy1["default"] = types.QueueingModelScalingConfig{SLOMultiplier: 99.0}
+	copy1["default"] = QueueingModelScalingConfig{SLOMultiplier: 99.0}
 
 	copy2 := cfg.QMAnalyzerConfig()
 	if copy2["default"].SLOMultiplier != 3.0 {

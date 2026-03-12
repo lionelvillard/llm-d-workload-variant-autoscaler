@@ -6,8 +6,6 @@ import (
 	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // Config is the unified configuration structure for the WVA controller.
@@ -79,7 +77,7 @@ type SaturationScalingConfigPerModel map[string]SaturationScalingConfig
 
 // QMAnalyzerConfigPerModel represents queueing model scaling configuration
 // for all models. Maps model ID (or "default" key) to its configuration.
-type QMAnalyzerConfigPerModel map[string]types.QueueingModelScalingConfig
+type QMAnalyzerConfigPerModel map[string]QueueingModelScalingConfig
 
 // saturationConfig holds saturation scaling configuration (namespace-aware)
 type saturationConfig struct {
@@ -496,7 +494,7 @@ func (c *Config) UpdateScaleToZeroConfigForNamespace(namespace string, config Sc
 // QMAnalyzerConfig returns the current global queueing model scaling configuration.
 // Thread-safe. Returns a copy to prevent external modifications.
 // For namespace-aware lookups, use QMAnalyzerConfigForNamespace instead.
-func (c *Config) QMAnalyzerConfig() map[string]types.QueueingModelScalingConfig {
+func (c *Config) QMAnalyzerConfig() map[string]QueueingModelScalingConfig {
 	return c.QMAnalyzerConfigForNamespace("")
 }
 
@@ -504,7 +502,7 @@ func (c *Config) QMAnalyzerConfig() map[string]types.QueueingModelScalingConfig 
 // Resolution order: namespace-local > global
 // Thread-safe. Returns a copy to prevent external modifications.
 // If namespace is empty, returns global config.
-func (c *Config) QMAnalyzerConfigForNamespace(namespace string) map[string]types.QueueingModelScalingConfig {
+func (c *Config) QMAnalyzerConfigForNamespace(namespace string) map[string]QueueingModelScalingConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	sourceConfig := c.resolveQMAnalyzerConfig(namespace)
@@ -513,7 +511,7 @@ func (c *Config) QMAnalyzerConfigForNamespace(namespace string) map[string]types
 
 // resolveQMAnalyzerConfig resolves queueing model config for a namespace (namespace-local > global).
 // Must be called while holding at least a read lock.
-func (c *Config) resolveQMAnalyzerConfig(namespace string) map[string]types.QueueingModelScalingConfig {
+func (c *Config) resolveQMAnalyzerConfig(namespace string) map[string]QueueingModelScalingConfig {
 	// Check namespace-local first (if namespace is provided)
 	if namespace != "" {
 		if nsConfig, exists := c.qmAnalyzer.namespaceConfigs[namespace]; exists {
@@ -532,11 +530,11 @@ func (c *Config) resolveQMAnalyzerConfig(namespace string) map[string]types.Queu
 }
 
 // copyQMAnalyzerConfig creates a deep copy of the queueing model config map.
-func copyQMAnalyzerConfig(src map[string]types.QueueingModelScalingConfig) map[string]types.QueueingModelScalingConfig {
+func copyQMAnalyzerConfig(src map[string]QueueingModelScalingConfig) map[string]QueueingModelScalingConfig {
 	if src == nil {
-		return make(map[string]types.QueueingModelScalingConfig)
+		return make(map[string]QueueingModelScalingConfig)
 	}
-	result := make(map[string]types.QueueingModelScalingConfig, len(src))
+	result := make(map[string]QueueingModelScalingConfig, len(src))
 	for k, v := range src {
 		result[k] = v
 	}
@@ -546,19 +544,19 @@ func copyQMAnalyzerConfig(src map[string]types.QueueingModelScalingConfig) map[s
 // UpdateQMAnalyzerConfig updates the global queueing model scaling configuration.
 // Thread-safe. Takes a copy of the provided map to prevent external modifications.
 // For namespace-local updates, use UpdateQMAnalyzerConfigForNamespace instead.
-func (c *Config) UpdateQMAnalyzerConfig(config map[string]types.QueueingModelScalingConfig) {
+func (c *Config) UpdateQMAnalyzerConfig(config map[string]QueueingModelScalingConfig) {
 	c.UpdateQMAnalyzerConfigForNamespace("", config)
 }
 
 // UpdateQMAnalyzerConfigForNamespace updates the queueing model scaling configuration for the given namespace.
 // If namespace is empty, updates global config.
 // Thread-safe. Takes a copy of the provided map to prevent external modifications.
-func (c *Config) UpdateQMAnalyzerConfigForNamespace(namespace string, config map[string]types.QueueingModelScalingConfig) {
+func (c *Config) UpdateQMAnalyzerConfigForNamespace(namespace string, config map[string]QueueingModelScalingConfig) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	// Make a copy to prevent external modifications
-	newConfig := make(map[string]types.QueueingModelScalingConfig, len(config))
+	newConfig := make(map[string]QueueingModelScalingConfig, len(config))
 	maps.Copy(newConfig, config)
 
 	var oldCount int
