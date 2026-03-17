@@ -742,7 +742,7 @@ func (e *Engine) convertSaturationTargetsToDecisions(
 }
 
 // hasMinReplicasAboveZero returns true if any variant in the states has MinReplicas > 0.
-func hasMinReplicasAboveZero(states []interfaces.VariantReplicaState) bool {
+func hasMinReplicasAboveZero(states []types.VariantReplicaState) bool {
 	for _, state := range states {
 		if state.MinReplicas != nil && *state.MinReplicas > 0 {
 			return true

@@ -934,17 +934,17 @@ var _ = Describe("GreedyByScoreOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						ModelID:          "model-1",
 						Namespace:        "default",
 						AnalyzedAt:       time.Now(),
 						RequiredCapacity: 50000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "cheap", AcceleratorName: "A100", Cost: 5.0, ReplicaCount: 1, PerReplicaCapacity: 10000},
 							{VariantName: "expensive", AcceleratorName: "A100", Cost: 15.0, ReplicaCount: 1, PerReplicaCapacity: 20000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "cheap", CurrentReplicas: 1, GPUsPerReplica: 1, MaxReplicas: intPtr(3)},
 						{VariantName: "expensive", CurrentReplicas: 1, GPUsPerReplica: 1},
 					},
@@ -966,17 +966,17 @@ var _ = Describe("GreedyByScoreOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						ModelID:          "model-1",
 						Namespace:        "default",
 						AnalyzedAt:       time.Now(),
 						SpareCapacity:    50000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "expensive", AcceleratorName: "A100", Cost: 15.0, ReplicaCount: 3, PerReplicaCapacity: 20000},
 							{VariantName: "cheap", AcceleratorName: "A100", Cost: 5.0, ReplicaCount: 3, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "expensive", CurrentReplicas: 3, GPUsPerReplica: 1, MinReplicas: intPtr(2)},
 						{VariantName: "cheap", CurrentReplicas: 3, GPUsPerReplica: 1},
 					},
@@ -997,17 +997,17 @@ var _ = Describe("GreedyByScoreOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						ModelID:          "model-1",
 						Namespace:        "default",
 						AnalyzedAt:       time.Now(),
 						SpareCapacity:    80000, // enough to remove all
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "keep-alive", AcceleratorName: "A100", Cost: 15.0, ReplicaCount: 2, PerReplicaCapacity: 20000},
 							{VariantName: "expendable", AcceleratorName: "A100", Cost: 5.0, ReplicaCount: 3, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "keep-alive", CurrentReplicas: 2, GPUsPerReplica: 1, MinReplicas: intPtr(1)},
 						{VariantName: "expendable", CurrentReplicas: 3, GPUsPerReplica: 1, MinReplicas: intPtr(0)},
 					},

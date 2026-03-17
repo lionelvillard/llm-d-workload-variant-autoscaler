@@ -381,14 +381,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						RequiredCapacity: 30000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "cheap", AcceleratorName: "A100", Cost: 5.0, ReplicaCount: 1, PerReplicaCapacity: 10000},
 							{VariantName: "expensive", AcceleratorName: "H100", Cost: 15.0, ReplicaCount: 1, PerReplicaCapacity: 20000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "cheap", CurrentReplicas: 1, MaxReplicas: intPtr(3)},
 						{VariantName: "expensive", CurrentReplicas: 1},
 					},
@@ -410,14 +410,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						SpareCapacity: 50000,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "expensive", Cost: 15.0, ReplicaCount: 3, PerReplicaCapacity: 20000},
 							{VariantName: "cheap", Cost: 5.0, ReplicaCount: 3, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "expensive", CurrentReplicas: 3, MinReplicas: intPtr(2)},
 						{VariantName: "cheap", CurrentReplicas: 3},
 					},
@@ -439,14 +439,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						SpareCapacity: 80000, // enough to remove all
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "keep-alive", Cost: 15.0, ReplicaCount: 2, PerReplicaCapacity: 20000},
 							{VariantName: "expendable", Cost: 5.0, ReplicaCount: 3, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "keep-alive", CurrentReplicas: 2, MinReplicas: intPtr(1)},
 						{VariantName: "expendable", CurrentReplicas: 3, MinReplicas: intPtr(0)},
 					},
@@ -467,14 +467,14 @@ var _ = Describe("CostAwareOptimizer", func() {
 				{
 					ModelID:   "model-1",
 					Namespace: "default",
-					Result: &interfaces.AnalyzerResult{
+					Result: &types.AnalyzerResult{
 						RequiredCapacity: 0,
 						SpareCapacity:    0,
-						VariantCapacities: []interfaces.VariantCapacity{
+						VariantCapacities: []types.VariantCapacity{
 							{VariantName: "v1", Cost: 5.0, ReplicaCount: 2, PerReplicaCapacity: 10000},
 						},
 					},
-					VariantStates: []interfaces.VariantReplicaState{
+					VariantStates: []types.VariantReplicaState{
 						{VariantName: "v1", CurrentReplicas: 2, MinReplicas: intPtr(1), MaxReplicas: intPtr(10)},
 					},
 				},

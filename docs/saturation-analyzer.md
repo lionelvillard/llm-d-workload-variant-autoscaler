@@ -29,7 +29,7 @@ The Saturation Analyzer is a **fast, reactive, and safe saturation guardrail** t
 - Uses peak values over 1 minute for safety-first capacity analysis
 - Enriches metrics with pod metadata (variant name, accelerator type)
 
-**3. Interfaces (`internal/interfaces/capacity_analyzer.go`)**
+**3. Types (`internal/types/`)**
 - Defines data structures for replica metrics (including variant cost)
 - Defines analysis results and per-variant decision types
 - Provides interface for capacity analysis
@@ -179,7 +179,7 @@ import (
     "context"
     "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/saturation"
     "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector"
-    "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
+    "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/types"
 )
 
 // Create analyzer

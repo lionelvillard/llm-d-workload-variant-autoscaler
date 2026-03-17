@@ -77,7 +77,7 @@ func costAwareScaleUp(
 	ctx context.Context,
 	result *types.AnalyzerResult,
 	targets map[string]int,
-	stateMap map[string]interfaces.VariantReplicaState,
+	stateMap map[string]types.VariantReplicaState,
 ) {
 	logger := ctrl.LoggerFrom(ctx)
 
@@ -126,7 +126,7 @@ func costAwareScaleDown(
 	ctx context.Context,
 	result *types.AnalyzerResult,
 	targets map[string]int,
-	stateMap ...map[string]interfaces.VariantReplicaState,
+	stateMap ...map[string]types.VariantReplicaState,
 ) {
 	logger := ctrl.LoggerFrom(ctx)
 
@@ -135,7 +135,7 @@ func costAwareScaleDown(
 	remaining := result.SpareCapacity
 
 	// Build state lookup if provided
-	var states map[string]interfaces.VariantReplicaState
+	var states map[string]types.VariantReplicaState
 	if len(stateMap) > 0 {
 		states = stateMap[0]
 	}

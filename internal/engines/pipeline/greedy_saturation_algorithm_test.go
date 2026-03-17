@@ -281,7 +281,7 @@ var _ = Describe("GreedyBySaturation", func() {
 			It("should cap scale-up at maxReplicas even when GPUs are available", func() {
 				maxReplicas := 3
 				allocator = &simpleAllocator{remaining: 100}
-				decisions = []*interfaces.VariantDecision{
+				decisions = []*types.VariantDecision{
 					{
 						VariantName:     "v1",
 						CurrentReplicas: 1,
@@ -304,7 +304,7 @@ var _ = Describe("GreedyBySaturation", func() {
 			It("should enforce minReplicas floor even under GPU scarcity", func() {
 				minReplicas := 3
 				allocator = &simpleAllocator{remaining: 0} // no GPUs
-				decisions = []*interfaces.VariantDecision{
+				decisions = []*types.VariantDecision{
 					{
 						VariantName:     "v1",
 						CurrentReplicas: 1,
