@@ -1,12 +1,14 @@
 name: CI - PR Checks
 
 # Cancel previous runs on the same PR when new commits are pushed
-# Only group by PR number for legitimate triggers (pull_request, workflow_dispatch, /ok-to-test comments)
+# Group by PR number for pull_request and /ok-to-test comment triggers
 # Regular comments get a unique group (run_id) so they don't cancel in-progress test runs
+# workflow_dispatch falls back to run_id (no PR number available)
 #
 # Logic:
 # - Regular comments (not /ok-to-test): unique group prevents cancellation of real tests
-# - Valid triggers: group 'ci-pr-checks-{pr_number}' (can cancel previous runs for same PR)
+# - pull_request / /ok-to-test comments: group 'ci-pr-checks-{pr_number}' (can cancel previous runs for same PR)
+# - workflow_dispatch: group 'ci-pr-checks-{run_id}' (unique per run)
 # - Fallback chain for ID: pull_request.number -> issue.number -> run_id
 #
 # NOTE: Accepted command (/ok-to-test) must stay in sync with check-full-tests job validation
