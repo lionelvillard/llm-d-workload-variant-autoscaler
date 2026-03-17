@@ -1,12 +1,14 @@
 name: CI - PR Checks
 
 # Cancel previous runs on the same PR when new commits are pushed
-# Only group by PR number for legitimate triggers (pull_request, workflow_dispatch, /ok-to-test comments)
+# Group by PR number for pull_request and /ok-to-test comment triggers
 # Regular comments get a unique group (run_id) so they don't cancel in-progress test runs
+# workflow_dispatch falls back to run_id (no PR number available)
 #
 # Logic:
 # - Regular comments (not /ok-to-test): unique group prevents cancellation of real tests
-# - Valid triggers: group 'ci-pr-checks-{pr_number}' (can cancel previous runs for same PR)
+# - pull_request / /ok-to-test comments: group 'ci-pr-checks-{pr_number}' (can cancel previous runs for same PR)
+# - workflow_dispatch: group 'ci-pr-checks-{run_id}' (unique per run)
 # - Fallback chain for ID: pull_request.number -> issue.number -> run_id
 #
 # NOTE: Accepted command (/ok-to-test) must stay in sync with check-full-tests job validation
@@ -36,7 +38,7 @@ on:
         required: false
         default: false
         type: boolean
-  # Allow triggering via /ok-to-test PR comment (same command used for OpenShift E2E)
+  # Allow triggering via /ok-to-test PR comment
   issue_comment:
     types: [created]
 
@@ -82,7 +84,7 @@ jobs:
           ref: ${{ github.event_name == 'issue_comment' && steps.pr-info.outputs.pr_head_sha || github.event.pull_request.head.sha || github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-      
+
       - name: Check for code changes
         uses: dorny/paths-filter@v3
         id: filter
@@ -96,7 +98,7 @@ jobs:
               - '!LICENSE'
               - '!OWNERS'
               - '!PROJECT'
-      
+
       - name: Set output with default
         id: set-output
         run: |
@@ -188,7 +190,7 @@ jobs:
               core.setOutput('run_full', 'true');
               return;
             }
-            
+
             // Check for /ok-to-test comment trigger
             if (context.eventName === 'issue_comment') {
               const comment = context.payload.comment.body.trim();
@@ -248,7 +250,7 @@ jobs:
               core.setOutput('run_full', 'true');
               return;
             }
-            
+
             core.setOutput('run_full', 'false');
 
   # E2E smoke tests - run automatically on every PR with code changes
@@ -302,13 +304,13 @@ jobs:
           IMAGE_TAG="pr-${GITHUB_RUN_ID}-${CHECKOUT_SHA:0:7}"
           # Use localhost prefix for local-only image (Kind will load it directly)
           FULL_IMAGE="localhost/${IMAGE_NAME}:${IMAGE_TAG}"
-          
+
           echo "Building local image: $FULL_IMAGE"
           echo "Image will be loaded into Kind cluster (no push needed)"
-          
+
           # Build image locally (no push needed for Kind)
           make docker-build IMG="$FULL_IMAGE"
-          
+
           echo "image=$FULL_IMAGE" >> $GITHUB_OUTPUT
           echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
           echo "Image built locally: $FULL_IMAGE"
