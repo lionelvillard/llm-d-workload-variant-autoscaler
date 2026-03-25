@@ -103,7 +103,7 @@ jobs:
         id: set-output
         run: |
           # Use filter output if available, otherwise default to 'true' for issue_comment events
-          # This ensures /trigger-e2e-full works even if PR context is unclear
+          # This ensures comment triggers work even if PR context is unclear
           FILTER_OUTPUT="${{ steps.filter.outputs.code }}"
           if [ "${{ github.event_name }}" == "issue_comment" ] && [ -z "$FILTER_OUTPUT" ]; then
             echo "has_code_changes=true" >> $GITHUB_OUTPUT
