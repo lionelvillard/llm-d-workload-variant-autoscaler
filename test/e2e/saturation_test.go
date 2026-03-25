@@ -318,7 +318,7 @@ var _ = Describe("Saturation Mode - Single VariantAutoscaling", Label("full"), O
 })
 
 // Multi-variant saturation test (cost-based scaling)
-var _ = Describe("Saturation Mode - Multiple VariantAutoscalings", Label("full"), Focus, Ordered, func() {
+var _ = Describe("Saturation Mode - Multiple VariantAutoscalings", Label("full"), Ordered, func() {
 	var (
 		poolA         = "saturation-multi-pool-a"
 		poolB         = "saturation-multi-pool-b"
