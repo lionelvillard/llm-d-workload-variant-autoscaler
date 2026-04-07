@@ -30,10 +30,10 @@ func WithScaledObjectScaleTargetKind(kind string) ScaledObjectOption {
 		scaleTargetRef["kind"] = kind
 		// Set appropriate APIVersion based on kind
 		switch kind {
-		case "LeaderWorkerSet":
-			scaleTargetRef["apiVersion"] = "leaderworkerset.x-k8s.io/v1"
-		case "Deployment":
-			scaleTargetRef["apiVersion"] = "apps/v1"
+		case kindLeaderWorkerSet:
+			scaleTargetRef["apiVersion"] = apiVersionLWS
+		case kindDeployment:
+			scaleTargetRef["apiVersion"] = apiVersionAppsV1
 		default:
 			// Keep existing APIVersion for unknown kinds
 		}
@@ -119,7 +119,7 @@ func buildScaledObject(namespace, name, deploymentName, vaName string, minReplic
 
 	spec := map[string]interface{}{
 		"scaleTargetRef": map[string]interface{}{
-			"apiVersion": "apps/v1",
+			"apiVersion": apiVersionAppsV1,
 			"kind":       "Deployment",
 			"name":       deploymentName,
 		},

@@ -181,7 +181,7 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 			// when the scale target is created
 			return ctrl.Result{}, nil
 		}
-		logger.Error(err, fmt.Sprintf("Failed to get scale target %s", va.Spec.ScaleTargetRef.Kind),
+		logger.Error(err, "Failed to get scale target "+va.Spec.ScaleTargetRef.Kind,
 			"name", scaleTargetName,
 			"namespace", va.Namespace)
 		return ctrl.Result{}, err

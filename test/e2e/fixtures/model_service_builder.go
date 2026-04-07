@@ -3,6 +3,7 @@ package fixtures
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -221,20 +222,20 @@ func buildModelServerArgs(modelID string, useSimulator bool, maxNumSeqs int) []s
 		return []string{
 			"--model", modelID,
 			"--port", "8000",
-			fmt.Sprintf("--time-to-first-token=%s", simulatorTTFT),
-			fmt.Sprintf("--inter-token-latency=%s", simulatorITL),
+			"--time-to-first-token=" + simulatorTTFT,
+			"--inter-token-latency=" + simulatorITL,
 			"--mode=random",
 			"--enable-kvcache",
 			fmt.Sprintf("--kv-cache-size=%d", simulatorKVCacheSize),
 			fmt.Sprintf("--block-size=%d", simulatorBlockSize),
 			"--tokenizers-cache-dir=/tmp",
-			"--max-num-seqs", fmt.Sprintf("%d", maxNumSeqs),
-			"--max-model-len", fmt.Sprintf("%d", simulatorMaxModelLen),
+			"--max-num-seqs", strconv.Itoa(maxNumSeqs),
+			"--max-model-len", strconv.Itoa(simulatorMaxModelLen),
 		}
 	}
 	return []string{
 		"--model", modelID,
-		"--max-num-seqs", fmt.Sprintf("%d", maxNumSeqs),
+		"--max-num-seqs", strconv.Itoa(maxNumSeqs),
 		"--max-model-len", "1024",
 		"--served-model-name", modelID,
 		"--disable-log-requests",

@@ -52,7 +52,7 @@ func cleanupSmokeTestResources() {
 	}
 
 	// Delete all ScaledObjects with smoke-test prefix (KEDA)
-	if cfg.ScalerBackend == "keda" {
+	if cfg.ScalerBackend == scalerBackendKeda {
 		soList := &unstructured.UnstructuredList{}
 		soList.SetAPIVersion("keda.sh/v1alpha1")
 		soList.SetKind("ScaledObjectList")
@@ -131,7 +131,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				// At least one pod should be running and ready
 				readyPods := 0
 				for _, pod := range pods.Items {
-					if pod.Status.Phase == "Running" {
+					if pod.Status.Phase == corev1.PodRunning {
 						for _, condition := range pod.Status.Conditions {
 							if condition.Type == "Ready" && condition.Status == "True" {
 								readyPods++
@@ -291,7 +291,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			if cfg.ScaleToZeroEnabled {
 				minReplicas = 0
 			}
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				_ = k8sClient.AutoscalingV2().HorizontalPodAutoscalers(cfg.LLMDNamespace).Delete(ctx, hpaName+"-hpa", metav1.DeleteOptions{})
 				err = fixtures.EnsureScaledObject(ctx, crClient, cfg.LLMDNamespace, hpaName, deploymentName, vaName, minReplicas, 10, cfg.MonitoringNS)
 				Expect(err).NotTo(HaveOccurred(), "Failed to create ScaledObject")
@@ -306,7 +306,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			// Delete in reverse dependency order: scaler (HPA or ScaledObject) -> VA
 			// Load Job, Service, Deployment, and ServiceMonitor cleanup is handled by DeferCleanup registered in BeforeAll and test
 
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				err := fixtures.DeleteScaledObject(ctx, crClient, cfg.LLMDNamespace, hpaName)
 				Expect(err).NotTo(HaveOccurred())
 			} else {
@@ -352,7 +352,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				// Check for TargetResolved condition
 				targetResolved := false
 				for _, cond := range va.Status.Conditions {
-					if cond.Type == "TargetResolved" && cond.Status == metav1.ConditionTrue {
+					if cond.Type == variantautoscalingv1alpha1.TypeTargetResolved && cond.Status == metav1.ConditionTrue {
 						targetResolved = true
 						break
 					}
@@ -376,7 +376,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), "TargetResolved should be True")
 			}).Should(Succeed())
 
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				By("Verifying ScaledObject exists (KEDA backend; external metric name is KEDA-generated)")
 				soName := hpaName + "-so"
 				so := &unstructured.Unstructured{}
@@ -453,7 +453,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		})
 
 		It("should have scaling controlled by backend", func() {
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				By("Verifying ScaledObject exists and KEDA has created an HPA")
 				soName := hpaName + "-so"
 				so := &unstructured.Unstructured{}
@@ -666,7 +666,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			if cfg.ScaleToZeroEnabled {
 				minReplicas = 0
 			}
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				_ = k8sClient.AutoscalingV2().HorizontalPodAutoscalers(cfg.LLMDNamespace).Delete(ctx, hpaName+"-hpa", metav1.DeleteOptions{})
 				err = fixtures.EnsureScaledObject(ctx, crClient, cfg.LLMDNamespace, hpaName, lwsName, vaName, minReplicas, 10, cfg.MonitoringNS,
 					fixtures.WithScaledObjectScaleTargetKind("LeaderWorkerSet"))
@@ -680,7 +680,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 
 		AfterAll(func() {
 			By("Cleaning up LWS test resources")
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				err := fixtures.DeleteScaledObject(ctx, crClient, cfg.LLMDNamespace, hpaName)
 				Expect(err).NotTo(HaveOccurred())
 			} else {
@@ -726,7 +726,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				// Check for TargetResolved condition
 				targetResolved := false
 				for _, cond := range va.Status.Conditions {
-					if cond.Type == "TargetResolved" && cond.Status == metav1.ConditionTrue {
+					if cond.Type == variantautoscalingv1alpha1.TypeTargetResolved && cond.Status == metav1.ConditionTrue {
 						targetResolved = true
 						break
 					}
@@ -749,7 +749,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), "TargetResolved should be True")
 			}).Should(Succeed())
 
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				By("Verifying ScaledObject exists (KEDA backend; external metric name is KEDA-generated)")
 				soName := hpaName + "-so"
 				so := &unstructured.Unstructured{}
@@ -831,7 +831,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		})
 
 		It("should have scaling controlled by backend with LWS", func() {
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				By("Verifying ScaledObject exists and KEDA has created an HPA for LWS")
 				soName := hpaName + "-so"
 				so := &unstructured.Unstructured{}
@@ -944,7 +944,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				})
 				g.Expect(err).NotTo(HaveOccurred())
 				// With 1 replica and group size 2, we expect 2 pods total (1 leader + 1 worker)
-				g.Expect(len(pods.Items)).To(Equal(int(lwsGroupSize)), fmt.Sprintf("Should have %d pods (1 replica × group size %d)", lwsGroupSize, lwsGroupSize))
+				g.Expect(pods.Items).To(HaveLen(int(lwsGroupSize)), fmt.Sprintf("Should have %d pods (1 replica × group size %d)", lwsGroupSize, lwsGroupSize))
 
 				// At least the leader should be ready
 				readyCount := 0
@@ -963,7 +963,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		It("should scale up LWS under load", func() {
 			// HPA name: with Prometheus Adapter we create HPA named <hpaName>-hpa; with KEDA, KEDA creates HPA named keda-hpa-<scaledobject-name>
 			effectiveHpaName := hpaName + "-hpa"
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				effectiveHpaName = "keda-hpa-" + hpaName + "-so"
 			}
 
@@ -1084,7 +1084,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			By("Waiting for load job pod to start")
 			Eventually(func(g Gomega) {
 				podList, err := k8sClient.CoreV1().Pods(cfg.LLMDNamespace).List(ctx, metav1.ListOptions{
-					LabelSelector: fmt.Sprintf("job-name=%s", jobName),
+					LabelSelector: "job-name=" + jobName,
 				})
 				g.Expect(err).NotTo(HaveOccurred())
 				if len(podList.Items) == 0 {
@@ -1107,12 +1107,12 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 								reason = condition.Reason
 							}
 							if condition.Message != "" {
-								messages = append(messages, fmt.Sprintf("PodScheduled: %s", condition.Message))
+								messages = append(messages, "PodScheduled: "+condition.Message)
 							}
 						} else if condition.Status == corev1.ConditionFalse {
 							messages = append(messages, fmt.Sprintf("%s: %s", condition.Type, condition.Reason))
 							if condition.Message != "" {
-								messages = append(messages, fmt.Sprintf("  %s", condition.Message))
+								messages = append(messages, "  "+condition.Message)
 							}
 						}
 					}
@@ -1210,7 +1210,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				}
 
 				podList, podErr := k8sClient.CoreV1().Pods(cfg.LLMDNamespace).List(ctx, metav1.ListOptions{
-					LabelSelector: fmt.Sprintf("job-name=%s", jobName),
+					LabelSelector: "job-name=" + jobName,
 				})
 				if podErr == nil && len(podList.Items) > 0 {
 					pod := podList.Items[0]
@@ -1310,7 +1310,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			GinkgoWriter.Printf("✓ VA detected saturation and recommended %d replicas (took %v)\n", desiredReplicas, time.Since(loadStartTime))
 			GinkgoWriter.Printf("  → VA scale-up detected! Now verifying HPA and LWS scaling...\n")
 
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				By("Verifying KEDA HPA exists and has valid status (skipping desired-replicas check)")
 				hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(cfg.LLMDNamespace).Get(ctx, effectiveHpaName, metav1.GetOptions{})
 				Expect(err).NotTo(HaveOccurred())
@@ -1489,7 +1489,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			if cfg.ScaleToZeroEnabled {
 				minReplicas = 0
 			}
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				_ = k8sClient.AutoscalingV2().HorizontalPodAutoscalers(cfg.LLMDNamespace).Delete(ctx, hpaName+"-hpa", metav1.DeleteOptions{})
 				err = fixtures.EnsureScaledObject(ctx, crClient, cfg.LLMDNamespace, hpaName, lwsName, vaName, minReplicas, 10, cfg.MonitoringNS,
 					fixtures.WithScaledObjectScaleTargetKind("LeaderWorkerSet"))
@@ -1503,7 +1503,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 
 		AfterAll(func() {
 			By("Cleaning up single-node LWS test resources")
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				err := fixtures.DeleteScaledObject(ctx, crClient, cfg.LLMDNamespace, hpaName)
 				Expect(err).NotTo(HaveOccurred())
 			} else {
@@ -1549,7 +1549,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				// Check for TargetResolved condition
 				targetResolved := false
 				for _, cond := range va.Status.Conditions {
-					if cond.Type == "TargetResolved" && cond.Status == metav1.ConditionTrue {
+					if cond.Type == variantautoscalingv1alpha1.TypeTargetResolved && cond.Status == metav1.ConditionTrue {
 						targetResolved = true
 						break
 					}
@@ -1572,7 +1572,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), "TargetResolved should be True")
 			}).Should(Succeed())
 
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				By("Verifying ScaledObject exists (KEDA backend; external metric name is KEDA-generated)")
 				soName := hpaName + "-so"
 				so := &unstructured.Unstructured{}
@@ -1654,7 +1654,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		})
 
 		It("should have scaling controlled by backend with single-node LWS", func() {
-			if cfg.ScalerBackend == "keda" {
+			if cfg.ScalerBackend == scalerBackendKeda {
 				By("Verifying ScaledObject exists and KEDA has created an HPA for single-node LWS")
 				soName := hpaName + "-so"
 				so := &unstructured.Unstructured{}
@@ -1767,7 +1767,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				})
 				g.Expect(err).NotTo(HaveOccurred())
 				// With 1 replica and group size 1, we expect 1 pod total (1 leader + 0 workers)
-				g.Expect(len(pods.Items)).To(Equal(int(lwsGroupSize)), fmt.Sprintf("Should have %d pod (1 replica × group size %d)", lwsGroupSize, lwsGroupSize))
+				g.Expect(pods.Items).To(HaveLen(int(lwsGroupSize)), fmt.Sprintf("Should have %d pod (1 replica × group size %d)", lwsGroupSize, lwsGroupSize))
 
 				// The leader should be ready
 				readyCount := 0

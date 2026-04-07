@@ -43,7 +43,7 @@ var _ = Describe("Indexers", Ordered, func() {
 	)
 
 	BeforeAll(func() {
-		testCtx, cancel = context.WithCancel(context.Background())
+		testCtx, cancel = context.WithCancel(context.Background()) //nolint:fatcontext // shared across BeforeAll/AfterAll
 		namespace = fmt.Sprintf("test-indexers-%d", GinkgoRandomSeed())
 
 		// Create the test namespace

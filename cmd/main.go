@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	goflag "flag"
 	"fmt"
 	"net/http"
@@ -68,7 +69,7 @@ import (
 	inferencePoolV1 "sigs.k8s.io/gateway-api-inference-extension/api/v1"
 	inferencePoolV1alpha2 "sigs.k8s.io/gateway-api-inference-extension/apix/v1alpha2"
 	lwsv1 "sigs.k8s.io/lws/api/leaderworkerset/v1"
-	//+kubebuilder:scaffold:imports
+	// +kubebuilder:scaffold:imports
 )
 
 var (
@@ -82,7 +83,7 @@ func init() {
 	utilruntime.Must(inferencePoolV1.Install(scheme))
 	utilruntime.Must(inferencePoolV1alpha2.Install(scheme))
 	// Note: LeaderWorkerSet scheme is added conditionally in main() after checking if CRD exists
-	//+kubebuilder:scaffold:scheme
+	// +kubebuilder:scaffold:scheme
 }
 
 // checkLeaderWorkerSetCRD checks if the LeaderWorkerSet CRD is installed in the cluster
@@ -189,7 +190,8 @@ func main() {
 	cfg, err := config.Load(flag.CommandLine, *configFilePath)
 	if err != nil {
 		setupLog.Error(err, "failed to load configuration - this is a fatal error")
-		os.Exit(1)
+		logging.Sync() //nolint:errcheck
+		os.Exit(1)     //nolint:gocritic // exitAfterDefer: Sync() called explicitly above
 	}
 	setupLog.Info("Configuration loaded successfully")
 
@@ -544,7 +546,7 @@ func main() {
 		if syncErr != "" {
 			return fmt.Errorf("initial ConfigMap bootstrap not complete: %s", syncErr)
 		}
-		return fmt.Errorf("initial ConfigMap bootstrap not complete")
+		return errors.New("initial ConfigMap bootstrap not complete")
 	}); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
