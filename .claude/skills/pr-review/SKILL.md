@@ -36,7 +36,7 @@ Pass both outputs to all review agents.
 
 ## Step 3: Parallel Review
 
-Launch **all three agents simultaneously** in a single message with three parallel Agent tool calls:
+Launch **all four agents simultaneously** in a single message with four parallel Agent tool calls:
 
 **Agent: go-reviewer**
 Prompt: "Review this pull request for Go code quality and AGENTS.md compliance.
@@ -59,7 +59,14 @@ Changed files: <list>
 Diff:
 <diff>"
 
-Wait for all three to complete before proceeding.
+**Agent: go-reuse-checker**
+Prompt: "Review this pull request for reimplemented functionality that already exists in the project's imports or Go stdlib.
+PR #<number>: <title>
+Changed files: <list>
+Diff:
+<diff>"
+
+Wait for all four to complete before proceeding.
 
 ## Step 4: Aggregate and Post
 
@@ -70,7 +77,7 @@ If no issues meet the threshold, post:
 ```
 ### Code Review
 
-No issues found. Checked Go conventions, test coverage, and security.
+No issues found. Checked Go conventions, test coverage, security, and library reuse.
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
 ```
@@ -91,6 +98,9 @@ Found N issues:
 
 **Security**
 3. <brief description> — `path/to/file.go#L10`
+
+**Library Reuse**
+4. <brief description> — `path/to/file.go#L10`
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
 ```
