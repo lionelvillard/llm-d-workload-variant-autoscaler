@@ -342,14 +342,14 @@ wva:
   prometheus:
     monitoringNamespace: workload-variant-autoscaler-monitoring
     baseURL: "https://prometheus-k8s.monitoring.svc.cluster.local:9090"
-    
+
     # TLS configuration
     tls:
       # CA certificate path inside container
       caCertPath: "/etc/ssl/certs/prometheus-ca.crt"
       # Set to true to skip TLS verification (not recommended for production)
       insecureSkipVerify: false
-    
+
     # Provide CA certificate directly
     # caCert: |
     #   -----BEGIN CERTIFICATE-----
@@ -370,7 +370,7 @@ llmd:
 va:
   enabled: true           # Create VariantAutoscaling CR
   # accelerator: Optional. If not specified, it will be auto-discovered
-  # from target deployment. If specified, it will be used as fall-back value if it can't 
+  # from target deployment. If specified, it will be used as fall-back value if it can't
   # be discovered.
   accelerator: H100       # GPU type: A100, H100, L40S, etc.
   sloTpot: 10            # Time per output token SLO (ms)
@@ -381,7 +381,7 @@ hpa:
   enabled: true           # Create HPA resource
   maxReplicas: 10        # Maximum number of replicas
   targetAverageValue: "1" # Target value for external metric
-  
+
   # Scaling behavior configuration
   behavior:
     scaleUp:
@@ -428,13 +428,13 @@ wva:
   image:
     tag: latest
   imagePullPolicy: Always
-  
+
   prometheus:
     baseURL: "https://my-prometheus.monitoring.svc.cluster.local:9090"
     monitoringNamespace: monitoring
     tls:
       insecureSkipVerify: true  # Only for dev/testing
-  
+
   logging:
     level: info
 
@@ -474,7 +474,7 @@ wva:
     #   -----BEGIN CERTIFICATE-----
     #   ...
     #   -----END CERTIFICATE-----
-  
+
   metrics:
     enabled: true
     port: 8443
@@ -490,7 +490,7 @@ llmd:
 va:
   enabled: true
   # accelerator: Optional. If not specified, it will be auto-discovered
-  # from target deployment. If specified, it will be used as fall-back value if it can't 
+  # from target deployment. If specified, it will be used as fall-back value if it can't
   # be discovered.
   accelerator: A100
   sloTpot: 10
@@ -697,7 +697,7 @@ HPA_STABILIZATION_SECONDS=30 ./deploy/install.sh
 | `WVA_LOG_LEVEL` | WVA logging level | `info` |
 | `VLLM_SVC_ENABLED` | Enable vLLM Service | `true` |
 | `VLLM_SVC_NODEPORT` | vLLM NodePort | `30000` |
-| `LLM_D_RELEASE` | llm-d version | `v0.3.0` |
+| `LLM_D_RELEASE` | llm-d version | `v0.6.0` |
 | `VLLM_MAX_NUM_SEQS` | vLLM max concurrent sequences per replica | (unset - uses vLLM default) |
 
 **vLLM Performance Tuning:**
