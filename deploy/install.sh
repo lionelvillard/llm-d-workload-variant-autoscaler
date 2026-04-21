@@ -47,7 +47,8 @@ CONTROLLER_INSTANCE=${CONTROLLER_INSTANCE:-""}
 # llm-d Configuration
 LLM_D_OWNER=${LLM_D_OWNER:-"llm-d"}
 LLM_D_PROJECT=${LLM_D_PROJECT:-"llm-d"}
-LLM_D_RELEASE=${LLM_D_RELEASE:-"v0.6.0"}
+#LLM_D_RELEASE=${LLM_D_RELEASE:-"v0.6.0"}
+LLM_D_RELEASE="v0.6.0" # temporary pin to fix CI builds (see .github/workflows/ci-e2e-openshift.yaml)
 LLM_D_MODELSERVICE_NAME=${LLM_D_MODELSERVICE_NAME:-"ms-$WELL_LIT_PATH_NAME-llm-d-modelservice"}
 LLM_D_EPP_NAME=${LLM_D_EPP_NAME:-"gaie-$WELL_LIT_PATH_NAME-epp"}
 CLIENT_PREREQ_DIR=${CLIENT_PREREQ_DIR:-"$WVA_PROJECT/$LLM_D_PROJECT/guides/prereq/client-setup"}
