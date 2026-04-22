@@ -226,6 +226,13 @@ deploy_llm_d_infrastructure() {
       fi
     fi
 
+    if [ "$ENVIRONMENT" == "kind-emulator" ]; then
+      log_info "Kind cluster detected - reducing llm-d-inference-scheduler resource requests to enable scheduling with limited resources"
+      kubectl patch deployment "$LLM_D_EPP_NAME" -n "$LLMD_NS" --type='json' \
+        -p='[{"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/cpu","value":"100m"},
+        {"op":"replace","path":"/spec/template/spec/containers/0/resources/requests/memory","value":"256Mi"}]'
+    fi
+
     # Post-deploy: align the WVA vllm-service selector and ServiceMonitor to match
     # the actual pod labels. The llm-d-modelservice chart sets pod labels from
     # modelArtifacts.labels (e.g. "Qwen3-32B"), but the WVA chart's Service selector
@@ -295,7 +302,7 @@ deploy_llm_d_infrastructure() {
         if kubectl get deployment "$LLM_D_EPP_NAME" -n "$LLMD_NS" &> /dev/null; then
             # Get the current image from the deployment
             local CURRENT_IMAGE=$(kubectl get deployment "$LLM_D_EPP_NAME" -n "$LLMD_NS" -o jsonpath='{.spec.template.spec.containers[0].image}')
-            
+
             # Only patch if the image is different
             if [ "$CURRENT_IMAGE" != "$LLM_D_INFERENCE_SCHEDULER_IMG" ]; then
                 log_info "Patching llm-d-inference-scheduler deployment: updating image from $CURRENT_IMAGE to $LLM_D_INFERENCE_SCHEDULER_IMG"
@@ -314,15 +321,15 @@ deploy_llm_d_infrastructure() {
             if kubectl get configmap "$LLM_D_EPP_NAME" -n "$LLMD_NS" &> /dev/null; then
                 # Check if flowControl is already enabled
                 local CURRENT_CONFIG=$(kubectl get configmap "$LLM_D_EPP_NAME" -n "$LLMD_NS" -o jsonpath='{.data.default-plugins\.yaml}')
-                
+
                 if echo "$CURRENT_CONFIG" | yq eval '.featureGates // [] | contains(["flowControl"])' - | grep -q 'true'; then
                     log_info "flowControl feature gate already enabled in EPP ConfigMap"
                 else
                     log_info "Enabling flowControl feature gate in EPP ConfigMap $LLM_D_EPP_NAME"
-                    
+
                     # Use yq to properly add flowControl to featureGates array (creates array if missing, appends if exists)
                     local UPDATED_CONFIG=$(echo "$CURRENT_CONFIG" | yq eval '.featureGates += ["flowControl"] | .featureGates |= unique' -)
-                    
+
                     # Validate that flowControl was successfully added
                     if echo "$UPDATED_CONFIG" | yq eval '.featureGates // [] | contains(["flowControl"])' - | grep -q 'true'; then
                         # Apply the updated config
@@ -333,7 +340,7 @@ deploy_llm_d_infrastructure() {
                                 "value": "'"$(echo "$UPDATED_CONFIG" | sed 's/"/\\"/g' | tr '\n' '\r' | sed 's/\r/\\n/g')"'"
                             }
                         ]'
-                        
+
                         # Restart deployment to pick up the config change
                         log_info "Restarting $LLM_D_EPP_NAME deployment to apply flowControl feature gate"
                         kubectl rollout restart deployment "$LLM_D_EPP_NAME" -n "$LLMD_NS"
