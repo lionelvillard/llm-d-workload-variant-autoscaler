@@ -1,8 +1,8 @@
 ---
 name: pr-review
-description: Review an open pull request for this project. Checks Go code quality (AGENTS.md), test coverage, and Kubernetes security. Posts findings as a GitHub PR comment. Use when the user asks to review a PR. Invoke with /pr-review [PR-number] or /pr-review to auto-detect the current branch's PR.
+description: Review an open pull request for this project. Checks Go code quality (AGENTS.md), test coverage, and Kubernetes security. Posts findings as a GitHub PR comment (idempotent: creates on first run, updates with resolved/new diff on re-runs). Use when the user asks to review a PR. Invoke with /pr-review [PR-number] or /pr-review to auto-detect the current branch's PR.
 disable-model-invocation: true
-allowed-tools: Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr comment:*), Bash(gh pr list:*), Bash(git rev-parse:*), Bash(git log:*), Agent, TodoWrite
+allowed-tools: Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr comment:*), Bash(gh pr list:*), Bash(gh api:*), Bash(git rev-parse:*), Bash(git log:*), Agent, TodoWrite
 ---
 
 # PR Review
@@ -24,6 +24,14 @@ Record: PR number, title, URL, base branch, head SHA.
 ```bash
 git rev-parse HEAD
 ```
+
+Also check if the PR already has a review comment from Claude Code, identified by the `🤖 Generated with [Claude Code]` signature:
+
+```bash
+gh api repos/{owner}/{repo}/issues/<number>/comments --jq '.[] | select(.body | contains("Generated with [Claude Code]")) | {id: .id, body: .body}' | head -1
+```
+
+If an existing Claude review comment is found, record its **comment ID** and **full body text** — do not stop, continue the review in "update" mode.
 
 ## Step 2: Fetch PR Context
 
@@ -70,9 +78,65 @@ Wait for all four to complete before proceeding.
 
 ## Step 4: Aggregate and Post
 
-Collect findings from all three agents. Only include issues with confidence >= 80.
+Collect findings from all four agents. Only include issues with confidence >= 80.
 
-If no issues meet the threshold, post:
+### Idempotent comment posting
+
+**If no existing Claude review comment was found** (first run): create a new comment with `gh pr comment`.
+
+**If an existing Claude review comment was found** (re-run): diff the old issues against the new findings and update the existing comment using:
+
+```bash
+gh api --method PATCH repos/{owner}/{repo}/issues/comments/<comment_id> --field body="<updated body>"
+```
+
+To compute the diff from the old comment body:
+- **Resolved**: old issue absent from new findings → `- [x] ~~<description>~~ *(resolved)*`
+- **Still open**: issue present in both old and new findings → `- [ ] <description>`
+- **New**: issue in new findings but absent from old comment → `- [ ] <description> *(new)*`
+
+Preserve per-category section headings. Omit a section entirely if it has no items.
+
+### Comment format — new comment
+
+```
+### Code Review
+
+**Go Code Quality**
+- [ ] <brief description> — `path/to/file.go#L42`
+  > AGENTS.md: "<relevant rule>"
+
+**Test Coverage**
+- [ ] <brief description> — `path/to/file_test.go`
+
+**Security**
+- [ ] <brief description> — `path/to/file.go#L10`
+
+**Library Reuse**
+- [ ] <brief description> — `path/to/file.go#L10`
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+```
+
+### Comment format — updated comment (re-run diff example)
+
+```
+### Code Review
+
+**Go Code Quality**
+- [x] ~~<previously reported issue>~~ *(resolved)*
+- [ ] <still-open issue> — `path/to/file.go#L42`
+- [ ] <newly found issue> *(new)* — `path/to/file.go#L55`
+
+**Security**
+- [ ] <still-open security issue> — `path/to/file.go#L10`
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+```
+
+### No issues
+
+If no issues meet the threshold **and** there is no existing review comment, post:
 
 ```
 ### Code Review
@@ -82,38 +146,9 @@ No issues found. Checked Go conventions, test coverage, security, and library re
 🤖 Generated with [Claude Code](https://claude.ai/code)
 ```
 
-Otherwise post:
-
-```
-### Code Review
-
-Found N issues:
-
-**Go Code Quality**
-1. <brief description> — `path/to/file.go#L42`
-   > AGENTS.md: "<relevant rule>"
-
-**Test Coverage**
-2. <brief description> — `path/to/file_test.go`
-
-**Security**
-3. <brief description> — `path/to/file.go#L10`
-
-**Library Reuse**
-4. <brief description> — `path/to/file.go#L10`
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-```
+If no issues meet the threshold **and** there IS an existing comment, update it to mark all previously open items as resolved.
 
 When linking to specific lines, use the full commit SHA:
 `https://github.com/llm-d/llm-d-workload-variant-autoscaler/blob/<full-sha>/path/to/file.go#L42-L45`
-
-Post the comment:
-```bash
-gh pr comment <number> --body "$(cat <<'REVIEW_EOF'
-<aggregated findings>
-REVIEW_EOF
-)"
-```
 
 Print the PR URL when done.
