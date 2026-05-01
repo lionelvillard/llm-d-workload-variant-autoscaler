@@ -2,7 +2,7 @@
 name: pr-review
 description: Review an open pull request for this project. Checks Go code quality (AGENTS.md), test coverage, and Kubernetes security. Posts findings as a GitHub PR comment (idempotent: creates on first run, updates with resolved/new diff on re-runs). Use when the user asks to review a PR. Invoke with /pr-review [PR-number] or /pr-review to auto-detect the current branch's PR.
 disable-model-invocation: true
-allowed-tools: Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr comment:*), Bash(gh pr list:*), Bash(gh api:*), Bash(git rev-parse:*), Bash(git log:*), Agent, TodoWrite
+allowed-tools: Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr comment:*), Bash(gh pr list:*), Bash(gh api repos/*/issues/*/comments:*), Bash(gh api repos/*/issues/comments/*:*), Bash(git rev-parse:*), Bash(git log:*), Agent, TodoWrite
 ---
 
 # PR Review
@@ -25,10 +25,10 @@ Record: PR number, title, URL, base branch, head SHA.
 git rev-parse HEAD
 ```
 
-Also check if the PR already has a review comment from Claude Code, identified by the `🤖 Generated with [Claude Code]` signature:
+Also check if the PR already has a review comment from Claude Code, identified by the `claude.ai/code` URL in its signature. Use `last` to get the most recent one if multiple exist:
 
 ```bash
-gh api repos/{owner}/{repo}/issues/<number>/comments --jq '.[] | select(.body | contains("Generated with [Claude Code]")) | {id: .id, body: .body}' | head -1
+gh api repos/{owner}/{repo}/issues/<number>/comments --jq '[.[] | select(.body | contains("claude.ai/code"))] | last | {id: .id, body: .body}'
 ```
 
 If an existing Claude review comment is found, record its **comment ID** and **full body text** — do not stop, continue the review in "update" mode.
@@ -95,6 +95,8 @@ To compute the diff from the old comment body:
 - **Still open**: issue present in both old and new findings → `- [ ] <description>`
 - **New**: issue in new findings but absent from old comment → `- [ ] <description> *(new)*`
 
+**Matching key**: two issues are the same if their `file.go#Lnn` reference is identical. Use description as a tiebreaker only when multiple issues share the same reference. Do not treat a reworded or rebased description as a new issue if the file+line anchor matches.
+
 Preserve per-category section headings. Omit a section entirely if it has no items.
 
 ### Comment format — new comment
@@ -146,7 +148,18 @@ No issues found. Checked Go conventions, test coverage, security, and library re
 🤖 Generated with [Claude Code](https://claude.ai/code)
 ```
 
-If no issues meet the threshold **and** there IS an existing comment, update it to mark all previously open items as resolved.
+If no issues meet the threshold **and** there IS an existing comment, update it using PATCH to mark all previously open items as resolved:
+
+```
+### Code Review
+
+**<Category>**
+- [x] ~~<previously open issue>~~ *(resolved)*
+
+No new issues found.
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+```
 
 When linking to specific lines, use the full commit SHA:
 `https://github.com/llm-d/llm-d-workload-variant-autoscaler/blob/<full-sha>/path/to/file.go#L42-L45`
