@@ -28,7 +28,7 @@ git rev-parse HEAD
 Also check if the PR already has a review comment from Claude Code, identified by the `claude.ai/code` URL in its signature. Use `last` to get the most recent one if multiple exist:
 
 ```bash
-gh api repos/{owner}/{repo}/issues/<number>/comments --jq '[.[] | select(.body | contains("claude.ai/code"))] | last | {id: .id, body: .body}'
+gh api repos/{owner}/{repo}/issues/<number>/comments --jq '[.[] | select(.body | contains("claude.ai/code"))] | last | select(. != null) | {id: .id, body: .body}'
 ```
 
 If an existing Claude review comment is found, record its **comment ID** and **full body text** — do not stop, continue the review in "update" mode.
@@ -84,10 +84,13 @@ Collect findings from all four agents. Only include issues with confidence >= 80
 
 **If no existing Claude review comment was found** (first run): create a new comment with `gh pr comment`.
 
-**If an existing Claude review comment was found** (re-run): diff the old issues against the new findings and update the existing comment using:
+**If an existing Claude review comment was found** (re-run): diff the old issues against the new findings and update the existing comment. Write the body to a temp file first to avoid shell expansion corrupting multi-line Markdown:
 
 ```bash
-gh api --method PATCH repos/{owner}/{repo}/issues/comments/<comment_id> --field body="<updated body>"
+cat > /tmp/review_body.txt << 'EOF'
+<updated body>
+EOF
+gh api --method PATCH repos/{owner}/{repo}/issues/comments/<comment_id> --field body=@/tmp/review_body.txt
 ```
 
 To compute the diff from the old comment body:
@@ -95,7 +98,7 @@ To compute the diff from the old comment body:
 - **Still open**: issue present in both old and new findings → `- [ ] <description>`
 - **New**: issue in new findings but absent from old comment → `- [ ] <description> *(new)*`
 
-**Matching key**: two issues are the same if their `file.go#Lnn` reference is identical. Use description as a tiebreaker only when multiple issues share the same reference. Do not treat a reworded or rebased description as a new issue if the file+line anchor matches.
+**Matching key**: two issues are the same if their `file.go#Lnn` reference is identical. Use description as a tiebreaker only when multiple issues share the same reference. Do not treat a reworded or rebased description as a new issue if the file+line anchor matches. If no exact `file.go#Lnn` match is found (e.g. after a rebase shifted line numbers), fall back to: same file path **and** ≥80% description similarity → treat as the same issue at its new location.
 
 Preserve per-category section headings. Omit a section entirely if it has no items.
 
