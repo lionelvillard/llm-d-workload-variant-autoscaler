@@ -25,10 +25,10 @@ Record: PR number, title, URL, base branch, head SHA.
 git rev-parse HEAD
 ```
 
-Also check if the PR already has a review comment from Claude Code, identified by the `claude.ai/code` URL in its signature. Use `last` to get the most recent one if multiple exist:
+Also check if the PR already has a review comment from Claude Code, identified by the `<!-- claude-pr-review -->` sentinel at the start of the body. Use `last` to get the most recent one if multiple exist:
 
 ```bash
-gh api repos/{owner}/{repo}/issues/<number>/comments --jq '[.[] | select(.body | contains("claude.ai/code"))] | last | select(. != null) | {id: .id, body: .body}'
+gh api repos/{owner}/{repo}/issues/<number>/comments --jq '[.[] | select(.body | startswith("<!-- claude-pr-review -->"))] | last | select(. != null) | {id: .id, body: .body}'
 ```
 
 If an existing Claude review comment is found, record its **comment ID** and **full body text** — do not stop, continue the review in "update" mode.
@@ -87,10 +87,12 @@ Collect findings from all four agents. Only include issues with confidence >= 80
 **If an existing Claude review comment was found** (re-run): diff the old issues against the new findings and update the existing comment. Write the body to a temp file first to avoid shell expansion corrupting multi-line Markdown:
 
 ```bash
-cat > /tmp/review_body.txt << 'EOF'
+BODY_FILE=$(mktemp /tmp/review_body_XXXXXX.txt)
+cat > "$BODY_FILE" << 'EOF'
 <updated body>
 EOF
-gh api --method PATCH repos/{owner}/{repo}/issues/comments/<comment_id> --field body=@/tmp/review_body.txt
+gh api --method PATCH repos/{owner}/{repo}/issues/comments/<comment_id> --field body=@"$BODY_FILE"
+rm -f "$BODY_FILE"
 ```
 
 To compute the diff from the old comment body:
@@ -98,13 +100,14 @@ To compute the diff from the old comment body:
 - **Still open**: issue present in both old and new findings → `- [ ] <description>`
 - **New**: issue in new findings but absent from old comment → `- [ ] <description> *(new)*`
 
-**Matching key**: two issues are the same if their `file.go#Lnn` reference is identical. Use description as a tiebreaker only when multiple issues share the same reference. Do not treat a reworded or rebased description as a new issue if the file+line anchor matches. If no exact `file.go#Lnn` match is found (e.g. after a rebase shifted line numbers), fall back to: same file path **and** ≥80% description similarity → treat as the same issue at its new location.
+**Matching key**: two issues are the same if their `file.go#Lnn` reference is identical. Use description as a tiebreaker only when multiple issues share the same reference. Do not treat a reworded or rebased description as a new issue if the file+line anchor matches. If no exact `file.go#Lnn` match is found (e.g. after a rebase shifted line numbers), fall back to: same file path **and** more than 80% of the whitespace-delimited words from the shorter description appear in the longer description (case-insensitive) → treat as the same issue at its new location.
 
 Preserve per-category section headings. Omit a section entirely if it has no items.
 
 ### Comment format — new comment
 
 ```
+<!-- claude-pr-review -->
 ### Code Review
 
 **Go Code Quality**
@@ -126,6 +129,7 @@ Preserve per-category section headings. Omit a section entirely if it has no ite
 ### Comment format — updated comment (re-run diff example)
 
 ```
+<!-- claude-pr-review -->
 ### Code Review
 
 **Go Code Quality**
@@ -144,6 +148,7 @@ Preserve per-category section headings. Omit a section entirely if it has no ite
 If no issues meet the threshold **and** there is no existing review comment, post:
 
 ```
+<!-- claude-pr-review -->
 ### Code Review
 
 No issues found. Checked Go conventions, test coverage, security, and library reuse.
@@ -154,6 +159,7 @@ No issues found. Checked Go conventions, test coverage, security, and library re
 If no issues meet the threshold **and** there IS an existing comment, update it using PATCH to mark all previously open items as resolved:
 
 ```
+<!-- claude-pr-review -->
 ### Code Review
 
 **<Category>**
