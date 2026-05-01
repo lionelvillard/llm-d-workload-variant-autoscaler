@@ -2,7 +2,7 @@
 name: pr-review
 description: Review an open pull request for this project. Checks Go code quality (AGENTS.md), test coverage, and Kubernetes security. Posts findings as a GitHub PR comment (idempotent: creates on first run, updates with resolved/new diff on re-runs). Use when the user asks to review a PR. Invoke with /pr-review [PR-number] or /pr-review to auto-detect the current branch's PR.
 disable-model-invocation: true
-allowed-tools: Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr comment:*), Bash(gh pr list:*), Bash(gh api repos/*/issues/*/comments:*), Bash(gh api repos/*/issues/comments/*:*), Bash(git rev-parse:*), Bash(git log:*), Agent, TodoWrite
+allowed-tools: Bash(gh pr view:*), Bash(gh pr diff:*), Bash(gh pr comment:*), Bash(gh pr list:*), Bash(gh api repos/*/issues/*/comments:*), Bash(gh api repos/*/issues/comments/*:*), Bash(git rev-parse:*), Bash(git log:*), Bash(mktemp:*), Agent, TodoWrite
 ---
 
 # PR Review
@@ -25,13 +25,16 @@ Record: PR number, title, URL, base branch, head SHA.
 git rev-parse HEAD
 ```
 
-Also check if the PR already has a review comment from Claude Code, identified by the `<!-- claude-pr-review -->` sentinel at the start of the body. Use `last` to get the most recent one if multiple exist:
+Also check if the PR already has a review comment from Claude Code. First look for the `<!-- claude-pr-review -->` sentinel (new-style); if not found, fall back to the legacy marker `Generated with [Claude Code]` (pre-sentinel comments). Use `last` to get the most recent match:
 
 ```bash
+# New-style sentinel
 gh api repos/{owner}/{repo}/issues/<number>/comments --jq '[.[] | select(.body | startswith("<!-- claude-pr-review -->"))] | last | select(. != null) | {id: .id, body: .body}'
+# Legacy fallback (run only if the above produces no output)
+gh api repos/{owner}/{repo}/issues/<number>/comments --jq '[.[] | select(.body | contains("Generated with [Claude Code]"))] | last | select(. != null) | {id: .id, body: .body}'
 ```
 
-If an existing Claude review comment is found, record its **comment ID** and **full body text** — do not stop, continue the review in "update" mode.
+If both produce no output, no prior review comment exists — treat this as the first run. If a JSON object is returned by either query, record its **comment ID** and **full body text** and continue in "update" mode.
 
 ## Step 2: Fetch PR Context
 
@@ -82,25 +85,44 @@ Collect findings from all four agents. Only include issues with confidence >= 80
 
 ### Idempotent comment posting
 
-**If no existing Claude review comment was found** (first run): create a new comment with `gh pr comment`.
-
-**If an existing Claude review comment was found** (re-run): diff the old issues against the new findings and update the existing comment. Write the body to a temp file first to avoid shell expansion corrupting multi-line Markdown:
+**If no existing Claude review comment was found** (first run): write the body to a temp file and post with `gh pr comment --body-file`:
 
 ```bash
 BODY_FILE=$(mktemp /tmp/review_body_XXXXXX.txt)
+# Write the fully rendered Markdown (replace everything below with actual content)
 cat > "$BODY_FILE" << 'EOF'
-<updated body>
+<actual comment body>
+EOF
+gh pr comment <number> --body-file "$BODY_FILE"
+rm -f "$BODY_FILE"
+```
+
+**If an existing Claude review comment was found** (re-run): diff the old issues against the new findings and update the existing comment using the same temp-file approach:
+
+```bash
+BODY_FILE=$(mktemp /tmp/review_body_XXXXXX.txt)
+# Write the fully rendered Markdown (replace everything below with actual content)
+cat > "$BODY_FILE" << 'EOF'
+<actual comment body>
 EOF
 gh api --method PATCH repos/{owner}/{repo}/issues/comments/<comment_id> --field body=@"$BODY_FILE"
 rm -f "$BODY_FILE"
 ```
+
+**Important**: In both snippets, replace only the `<actual comment body>` placeholder line with the fully rendered Markdown — leave the `EOF` terminator line intact. The heredoc delimiter is quoted (`'EOF'`) so no shell expansion occurs inside it.
 
 To compute the diff from the old comment body:
 - **Resolved**: old issue absent from new findings → `- [x] ~~<description>~~ *(resolved)*`
 - **Still open**: issue present in both old and new findings → `- [ ] <description>`
 - **New**: issue in new findings but absent from old comment → `- [ ] <description> *(new)*`
 
-**Matching key**: two issues are the same if their `file.go#Lnn` reference is identical. Use description as a tiebreaker only when multiple issues share the same reference. Do not treat a reworded or rebased description as a new issue if the file+line anchor matches. If no exact `file.go#Lnn` match is found (e.g. after a rebase shifted line numbers), fall back to: same file path **and** more than 80% of the whitespace-delimited words from the shorter description appear in the longer description (case-insensitive) → treat as the same issue at its new location.
+**Matching key** (applied in order, stop at first match). Before computing word overlap in any rule, strip the trailing `` — `...` `` anchor suffix from the bullet line (e.g. `` — `path/to/file.go#L42` ``), then tokenize on whitespace (case-insensitive):
+1. **Exact anchor**: `file.go#Lnn` references are identical → same issue.
+2. **Shifted anchor**: same file path **and** >80% word overlap on the stripped descriptions → same issue at its new location (handles rebases).
+3. **No anchor** (e.g. Test Coverage items with only a file path): same file path **and** >80% word overlap on the stripped descriptions → same issue.
+4. **No anchor and no file match**: >80% word overlap on the stripped descriptions alone → same issue.
+
+Do not treat a reworded description as new if any of the above rules match.
 
 Preserve per-category section headings. Omit a section entirely if it has no items.
 
