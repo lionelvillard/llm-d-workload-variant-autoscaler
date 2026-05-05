@@ -114,11 +114,6 @@ This migration is an opportunity to re-evaluate whether the existing analyzers a
 
 **Current approach:** Online Kalman filter learning service parameters (alpha, beta) from TTFT/ITL. M/G/1 model computes max throughput per replica under SLO constraints.
 
-**Questions:**
-1. **Is the Kalman filter justified?** If EPP provides stable TTFT/ITL metrics, a simpler exponential moving average or Prometheus `rate()` may suffice.
-2. **Is M/G/1 the right model?** vLLM uses continuous batching, not queue-then-serve. A throughput-ceiling model (observed max RPS at acceptable latency) may be more practical.
-3. **Should SLO targets drive scaling?** Alternatively, scale on utilization and let the scheduler handle SLO routing entirely in EPP.
-
 ### Recommendation
 
 Start with the **V1 saturation analyzer logic** (KV cache % + queue depth thresholds with spare-capacity triggers) for Phase 0-1. This is the simplest, most proven approach and maps directly to Prometheus recording rules. Defer token-capacity (V2) and queueing-model refinements to Phase 2-3 where WVA computes what PromQL cannot.
