@@ -72,7 +72,7 @@ The WVA system consists of:
 
 | # | Feature | Complexity | Strategy |
 |---|---------|-----------|----------|
-| 1 | Basic saturation scaling (KV cache + queue threshold) | Simple | Prometheus recording rules + HPA/KEDA |
+| 1 | V1 saturation scaling (KV cache % + queue depth thresholds) | Simple | Prometheus recording rules + HPA/KEDA (primary path) |
 | 2 | Token-based capacity (V2 analyzer) | Medium | Needs reassessment (see below) |
 | 3 | Cost-aware multi-variant optimization | Hard | WVA coordinator adjusting HPA bounds |
 | 4 | GPU-limited fair-share | Hard | Same coordinator with GPU inventory awareness |
@@ -89,9 +89,15 @@ The WVA system consists of:
 
 This migration is an opportunity to re-evaluate whether the existing analyzers are the right approach for an HPA/KEDA-native model.
 
-### V1 Saturation Analyzer
+### V1 Saturation Analyzer (Percentage-Based)
 
-Already deprecated. Will be removed — not ported.
+**Current approach:** Uses two metrics — KV cache usage (0.0-1.0) and queue length (integer count) — compared against configurable thresholds. Scale-up triggers when average spare capacity (threshold - usage) drops below a spare trigger. Scale-down includes a redistribution safety check: simulates removing one replica by applying a `N/(N-1)` load scale factor and verifying spares remain positive.
+
+**Configuration:** `KvCacheThreshold`, `QueueLengthThreshold`, `KvSpareTrigger`, `QueueSpareTrigger`, `MinNonSaturatedReplicasForScaleDown = 2`
+
+**Assessment:** This is the most natural fit for recording rules + HPA/KEDA. The logic is simple threshold arithmetic on percentage metrics that Prometheus already exposes. The redistribution safety check (scale-down guard) is slightly more involved but can be approximated with a recording rule that accounts for per-replica load redistribution.
+
+**Port strategy:** Express directly as Prometheus recording rules. This becomes the primary scaling signal for Phase 0-1.
 
 ### V2 Token-Based Analyzer
 
@@ -115,7 +121,7 @@ Already deprecated. Will be removed — not ported.
 
 ### Recommendation
 
-Start with **utilization-based scaling** (KV cache usage + queue depth) for Phase 0-1. This is expressible in recording rules today. Defer token-capacity and queueing-model refinements to Phase 2-3 where WVA computes what PromQL cannot.
+Start with the **V1 saturation analyzer logic** (KV cache % + queue depth thresholds with spare-capacity triggers) for Phase 0-1. This is the simplest, most proven approach and maps directly to Prometheus recording rules. Defer token-capacity (V2) and queueing-model refinements to Phase 2-3 where WVA computes what PromQL cannot.
 
 ---
 
@@ -157,39 +163,74 @@ metadata:
 
 ### Prometheus Recording Rules
 
-**Tier 1 — Basic Saturation Signals:**
+**Tier 1 — V1 Saturation Signals (per-deployment):**
 ```yaml
 groups:
 - name: llmd_autoscaling
   interval: 30s
   rules:
+  # Peak KV cache usage per deployment (1m window catches bursts between scrapes)
   - record: llmd:variant_kv_saturation
     expr: |
       max by (namespace, model_name, deployment) (
         max_over_time(vllm:kv_cache_usage_perc[1m])
       )
 
+  # Peak queue depth per deployment
   - record: llmd:variant_queue_depth
     expr: |
       max by (namespace, model_name, deployment) (
         max_over_time(vllm:num_requests_waiting[1m])
       )
+
+  # Spare KV capacity (positive = headroom, negative = saturated)
+  # KvCacheThreshold default: 0.80
+  - record: llmd:variant_kv_spare
+    expr: |
+      0.80 - llmd:variant_kv_saturation
+
+  # Spare queue capacity
+  # QueueLengthThreshold default: 5
+  - record: llmd:variant_queue_spare
+    expr: |
+      5 - llmd:variant_queue_depth
 ```
 
-**Tier 2 — Utilization-Based Desired Replicas:**
+**Tier 2 — V1 Desired Replicas (scale-up/down logic):**
 ```yaml
+  # Current replica count per deployment
+  - record: llmd:variant_current_replicas
+    expr: |
+      count by (namespace, model_name, deployment) (
+        vllm:kv_cache_usage_perc
+      )
+
+  # Desired replicas based on V1 saturation logic:
+  # Scale-up when spare < trigger (KvSpareTrigger default: 0.10)
+  # Uses ratio: current_replicas * (usage / target) to derive needed count
   - record: llmd:variant_desired_replicas
     expr: |
       ceil(
-        count by (namespace, model_name, deployment) (vllm:kv_cache_usage_perc)
-        * max by (namespace, model_name, deployment) (
-            max_over_time(vllm:kv_cache_usage_perc[1m])
-          )
+        llmd:variant_current_replicas
+        * llmd:variant_kv_saturation
         / 0.80
       )
+
+  # Scale-down guard: simulated load after removing one replica (N/(N-1) factor)
+  # Only safe when redistributed spare remains positive
+  - record: llmd:variant_scaledown_safe
+    expr: |
+      (
+        0.80 - (
+          llmd:variant_kv_saturation
+          * llmd:variant_current_replicas
+          / (llmd:variant_current_replicas - 1)
+        )
+      ) > 0
+      and llmd:variant_current_replicas > 2
 ```
 
-Note: This is the simplified utilization-based approach. Full token-capacity formulas, if needed, are computed by WVA and emitted as metrics.
+Note: Threshold values (0.80, 5, etc.) are defaults. These can be parameterized per-deployment via separate recording rules or overridden by the WVA coordinator in Phase 2-3. Full token-capacity formulas (V2), if needed, are computed by WVA and emitted as metrics.
 
 **Tier 3 — Scale-from-Zero Signal:**
 ```yaml
