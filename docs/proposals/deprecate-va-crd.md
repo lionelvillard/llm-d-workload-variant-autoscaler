@@ -59,6 +59,7 @@ metadata:
   name: granite-13b-scaler
   namespace: production
   annotations:
+    llm-d.ai/managed: "true"
     llm-d.ai/model-id: "ibm/granite-13b"
     llm-d.ai/variant-cost: "40.0"
 spec:
@@ -122,8 +123,8 @@ A `va-to-annotations` CLI tool converts existing VA resources to annotations:
 
 ```bash
 # Reads VA CRDs, adds annotations to their target ScaledObjects
-wva migrate --namespace production --dry-run
-wva migrate --namespace production --apply
+va-to-annotations migrate --namespace production --dry-run
+va-to-annotations migrate --namespace production --apply
 ```
 
 ---
