@@ -1,377 +1,210 @@
-# Proposal: Deprecate VariantAutoscaling CRD in Favor of HPA/KEDA
+# Proposal: Remove the VariantAutoscaling CRD
 
 **Authors:** [TBD]
 **Status:** Draft
 **Created:** 2026-05-05
-**Last Updated:** 2026-05-05
+**Last Updated:** 2026-05-06
 
 ---
 
 ## Problem Statement
 
-The Workload Variant Autoscaler (WVA) introduces a custom VariantAutoscaling CRD and a dedicated controller that acts as an intermediary between metrics sources (vLLM, EPP) and the actual scaling mechanism (HPA/KEDA). Today the flow is:
+The Workload Variant Autoscaler (WVA) introduces a custom VariantAutoscaling CRD that operators must create and manage for each model variant. This CRD duplicates information already present on the scaling target (Deployment, ScaledObject, HPA) and adds operational burden:
+
+- A custom CRD that operators must learn, create, and keep in sync with their deployments
+- Status management and reconciliation logic tied to the CRD lifecycle
+- Tight coupling between WVA's internal optimization logic and a user-facing API surface
+- Additional RBAC, validation webhooks, and CRD versioning concerns
+
+The core value of WVA — computing `wva_desired_replicas` from vLLM/EPP metrics — does not require a dedicated CRD. WVA can discover what to scale from annotations on existing Kubernetes objects (Deployments, KEDA ScaledObjects, or HPAs).
+
+### Current Flow (unchanged)
 
 ```
-vLLM/EPP metrics → Prometheus → WVA controller → wva_desired_replicas metric → HPA/KEDA → scale
+vLLM/EPP metrics → Prometheus → WVA controller → wva_desired_replicas → KEDA/HPA → scale
 ```
 
-This indirection adds operational complexity:
-- A custom CRD that operators must learn and manage
-- A dedicated controller with its own failure modes, status management, and actuator logic
-- Tight coupling between optimization logic and the CRD lifecycle
-- Duplication of what HPA/KEDA already does (metrics → scaling decision → actuation)
-
-Much of the WVA logic can be expressed as Prometheus recording rules consumed directly by HPA/KEDA, reducing the architecture to:
-
-```
-vLLM/EPP metrics → Prometheus recording rules → HPA/KEDA → scale
-```
+This flow remains the same. The only change is how WVA discovers which deployments to manage: annotations replace the CRD.
 
 ---
 
 ## Goals
 
-1. Eliminate the VariantAutoscaling CRD as the primary user-facing API
-2. Make HPA or KEDA ScaledObject the entry point for autoscaling configuration
-3. Represent variant cost as an annotation on HPA/KEDA rather than a CRD field
-4. Enable simple deployments (single variant per model) to work without any custom controller
-5. Retain advanced features (multi-variant cost optimization, queueing model) in a simplified WVA that operates on standard HPA/KEDA objects
-6. Reassess existing analyzers for fitness in the new architecture
+1. Remove the VariantAutoscaling CRD as the user-facing API
+2. Remove the VariantAutoscaling CRD reconciler from the WVA controller
+3. WVA discovers work by watching annotated ScaledObjects (or HPAs)
+4. Variant metadata (cost, model ID, GPU count) moves to annotations on the ScaledObject/HPA
+5. Reduce operational surface: fewer objects to create, no CRD versioning
+6. KEDA/HPA continues consuming `wva_desired_replicas` exactly as today
 
 ## Non-Goals
 
-- Rewriting HPA or KEDA — we use them as-is
-- Building a general-purpose autoscaling framework
-- Changing how vLLM exposes metrics (though we may request upstream improvements)
-- Replacing the EPP — we consume its existing metrics
-
----
-
-## Background
-
-### Current WVA Architecture
-
-The WVA system consists of:
-
-1. **VariantAutoscaling CRD** (`llmd.ai/v1alpha1`): Fields include `scaleTargetRef`, `modelID`, `minReplicas`, `maxReplicas`, `variantCost`
-2. **Saturation Engine** (30s optimization loop): Collects vLLM metrics, runs analyzers (V1/V2 saturation, queueing model), runs optimizers (cost-aware, GPU-limited fair-share), applies enforcers (scale-to-zero)
-3. **Scale-from-Zero Engine**: Monitors EPP `inference_extension_flow_control_queue_size` to wake scaled-to-zero deployments
-4. **Metrics Emission**: Emits `wva_desired_replicas`, `wva_current_replicas`, `wva_desired_ratio`
-5. **External Actuation**: HPA (via prometheus-adapter) or KEDA ScaledObject reads `wva_desired_replicas` and performs actual scaling
-
-### Metrics Consumed
-
-| Source | Metrics |
-|--------|---------|
-| vLLM pods | `vllm:kv_cache_usage_perc`, `vllm:num_requests_waiting`, `vllm:cache_config_info`, `vllm:request_prompt_tokens_*`, `vllm:request_generation_tokens_*`, `vllm:request_success_total` |
-| EPP (scheduler) | `inference_extension_flow_control_queue_size`, `inference_extension_scheduler_attempts_total`, TTFT/ITL metrics |
-
----
-
-## Feature Inventory & Porting Assessment
-
-| # | Feature | Complexity | Strategy |
-|---|---------|-----------|----------|
-| 1 | V1 saturation scaling (KV cache % + queue depth thresholds) | Simple | Prometheus recording rules + HPA/KEDA (primary path) |
-| 2 | Token-based capacity (V2 analyzer) | Medium | Needs reassessment (see below) |
-| 3 | Cost-aware multi-variant optimization | Hard | WVA coordinator adjusting HPA bounds |
-| 4 | GPU-limited fair-share | Hard | Same coordinator with GPU inventory awareness |
-| 5 | Scale-to-zero | Simple | KEDA `idleReplicaCount: 0` / HPA `minReplicas: 0` |
-| 6 | Scale-from-zero | Medium | KEDA trigger on EPP flow control queue > 0 |
-| 7 | P/D disaggregation | Medium | Separate HPA/ScaledObject per role |
-| 8 | Queueing model (Kalman filter + M/G/1) | Hard | Needs reassessment (see below) |
-| 9 | Safety net metrics | Eliminated | No intermediary = no intermediary failure |
-| 10 | ConfigMap-based configuration | Simple | Moves to recording rule params + annotations |
-
----
-
-## Analyzer Reassessment
-
-This migration is an opportunity to re-evaluate whether the existing analyzers are the right approach for an HPA/KEDA-native model.
-
-### V1 Saturation Analyzer (Percentage-Based)
-
-**Current approach:** Uses two metrics — KV cache usage (0.0-1.0) and queue length (integer count) — compared against configurable thresholds. Scale-up triggers when average spare capacity (threshold - usage) drops below a spare trigger. Scale-down includes a redistribution safety check: simulates removing one replica by applying a `N/(N-1)` load scale factor and verifying spares remain positive.
-
-**Configuration:** `KvCacheThreshold`, `QueueLengthThreshold`, `KvSpareTrigger`, `QueueSpareTrigger`, `MinNonSaturatedReplicasForScaleDown = 2`
-
-**Assessment:** This is the most natural fit for recording rules + HPA/KEDA. The logic is simple threshold arithmetic on percentage metrics that Prometheus already exposes. The redistribution safety check (scale-down guard) is slightly more involved but can be approximated with a recording rule that accounts for per-replica load redistribution.
-
-**Port strategy:** Express directly as Prometheus recording rules. This becomes the primary scaling signal for Phase 0-1.
-
-### V2 Token-Based Analyzer
-
-**Current approach:** Computes per-replica capacity in tokens using `cache_config_info` labels (`num_gpu_blocks`, `block_size`), average input/output tokens, and prefix cache hit rate. Derives k1 (memory-bound) and k2 (compute-bound) capacity.
-
-**Problem:** `cache_config_info` exposes capacity as labels on an info metric, not numeric gauges. The k1/k2 formula cannot be expressed in PromQL (you cannot do arithmetic on label values).
-
-**Options:**
-1. **Simplify to utilization-based:** Use `kv_cache_usage_perc` directly as a utilization signal. Recording rule: `desired = current_replicas * (kv_usage / target_utilization)`. No absolute token capacity needed.
-2. **Request upstream vLLM change:** Expose `num_gpu_blocks` and `block_size` as numeric gauge metrics. Then the formula is expressible in PromQL.
-3. **Keep in WVA:** WVA computes token capacity and emits `llmd:variant_per_replica_capacity` as a metric for recording rules to reference.
-
-### Queueing Model Analyzer
-
-**Current approach:** Online Kalman filter learning service parameters (alpha, beta) from TTFT/ITL. M/G/1 model computes max throughput per replica under SLO constraints.
-
-### Recommendation
-
-Start with the **V1 saturation analyzer logic** (KV cache % + queue depth thresholds with spare-capacity triggers) for Phase 0-1. This is the simplest, most proven approach and maps directly to Prometheus recording rules. Defer token-capacity (V2) and queueing-model refinements to Phase 2-3 where WVA computes what PromQL cannot.
+- Changing WVA's internal analyzers or optimization logic
+- Removing the WVA controller process (it still runs, collects metrics, and exposes `wva_desired_replicas`)
+- Changing how KEDA/HPA consume `wva_desired_replicas`
+- Replacing vLLM or EPP metrics
 
 ---
 
 ## Proposed Solution
 
-### Architecture Overview
+### Discovery via Annotations
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ Simple deployments (Phase 1): No WVA needed                     │
-│                                                                 │
-│ vLLM/EPP → Prometheus → Recording Rules → HPA/KEDA → Scale     │
-└─────────────────────────────────────────────────────────────────┘
+WVA watches ScaledObjects (or HPAs) with the `llm-d.ai/managed: "true"` annotation. All configuration currently in the VA CRD moves to annotations on the ScaledObject:
 
-┌─────────────────────────────────────────────────────────────────┐
-│ Advanced deployments (Phase 2-3): WVA as coordinator            │
-│                                                                 │
-│ vLLM/EPP → Prometheus → Recording Rules → HPA/KEDA → Scale     │
-│                                               ↑                 │
-│                              WVA adjusts min/maxReplicas        │
-│                              based on cost + queueing model     │
-└─────────────────────────────────────────────────────────────────┘
+```yaml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: granite-13b-scaler
+  namespace: production
+  annotations:
+    llm-d.ai/model-id: "ibm/granite-13b"
+    llm-d.ai/variant-cost: "40.0"
+spec:
+  scaleTargetRef:
+    kind: Deployment
+    name: granite-13b
+  triggers:
+  - type: prometheus
+    name: wva-desired-replicas
+    metadata:
+      query: wva_desired_replicas{variant_name="granite-13b",exported_namespace="production"}
+      threshold: '1'
+      activationThreshold: '0'
+      metricType: "AverageValue"
 ```
 
 ### Annotation Schema
 
-Variant cost and model identity move to annotations on HPA or KEDA ScaledObject:
+Annotations are placed on the ScaledObject (or HPA if not using KEDA):
 
-```yaml
-metadata:
-  annotations:
-    llmd.ai/model-id: "meta/llama-3.1-70b"
-    llmd.ai/variant-cost: "40.0"
-    llmd.ai/gpus-per-replica: "4"
-    llmd.ai/role: "decode"                  # "prefill" | "decode" | "both"
-    llmd.ai/priority: "1.0"                 # Fair-share priority
-    llmd.ai/scale-to-zero-retention: "10m"  # Idle period before scale-to-zero
+| Annotation | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `llm-d.ai/managed` | Yes | — | Opt-in for WVA management |
+| `llm-d.ai/model-id` | Yes | — | Model identifier (used for metric queries and multi-variant grouping) |
+| `llm-d.ai/variant-cost` | No | `"1.0"` | Cost per replica (for cost-aware optimization) |
+
+### WVA Behavior (Unchanged Internally)
+
+WVA's internal pipeline remains the same:
+1. **Discovery**: Watch annotated ScaledObjects/HPAs instead of VA CRDs
+2. **Collection**: Query Prometheus for vLLM/EPP metrics (same queries, same collector)
+3. **Analysis**: Run saturation engine (V1, V2, queueing model — unchanged)
+4. **Optimization**: Cost-aware, GPU-limited fair-share (unchanged)
+5. **Expose**: Expose `wva_desired_replicas{variant_name="granite-13b", exported_namespace="production"}` (unchanged)
+6. **Actuation**: None — KEDA/HPA reads the metric and scales (unchanged)
+
+The ScaledObject now serves dual duty: it carries WVA annotations (discovery + configuration) and defines the KEDA trigger (unchanged). WVA reads the annotations; KEDA reads `spec.triggers`. No additional objects needed.
+
+### Saturation Configuration
+
+The saturation scaling ConfigMap (`saturation-scaling-config`) continues to work as-is. Per-model overrides use the same `{modelID}#{namespace}` key format. WVA resolves the model ID from the `llm-d.ai/model-id` annotation on the ScaledObject/HPA instead of from the VA CRD's `spec.modelID` field.
+
+---
+
+## Migration Path
+
+### What Changes for Users
+
+| Before (with CRD) | After (annotations) |
+|-------------------|-------------------|
+| Create Deployment + VariantAutoscaling + ScaledObject | Create Deployment + ScaledObject (with annotations) |
+| 3 objects per variant | 2 objects per variant |
+| `spec.modelID` on VA | `llm-d.ai/model-id` annotation on ScaledObject |
+| `spec.variantCost` on VA | `llm-d.ai/variant-cost` annotation on ScaledObject |
+| `spec.minReplicas` / `spec.maxReplicas` on VA | `spec.minReplicas` / `spec.maxReplicas` on ScaledObject |
+| `spec.scaleTargetRef` on VA | Not needed (WVA resolves the target from ScaledObject's `spec.scaleTargetRef`) |
+
+### Migration Tool
+
+A `va-to-annotations` CLI tool converts existing VA resources to annotations:
+
+```bash
+# Reads VA CRDs, adds annotations to their target ScaledObjects
+wva migrate --namespace production --dry-run
+wva migrate --namespace production --apply
 ```
-
-### Prometheus Recording Rules
-
-**Tier 1 — V1 Saturation Signals (per-deployment):**
-```yaml
-groups:
-- name: llmd_autoscaling
-  interval: 30s
-  rules:
-  # Peak KV cache usage per deployment (1m window catches bursts between scrapes)
-  - record: llmd:variant_kv_saturation
-    expr: |
-      max by (namespace, model_name, deployment) (
-        max_over_time(vllm:kv_cache_usage_perc[1m])
-      )
-
-  # Peak queue depth per deployment
-  - record: llmd:variant_queue_depth
-    expr: |
-      max by (namespace, model_name, deployment) (
-        max_over_time(vllm:num_requests_waiting[1m])
-      )
-
-  # Spare KV capacity (positive = headroom, negative = saturated)
-  # KvCacheThreshold default: 0.80
-  - record: llmd:variant_kv_spare
-    expr: |
-      0.80 - llmd:variant_kv_saturation
-
-  # Spare queue capacity
-  # QueueLengthThreshold default: 5
-  - record: llmd:variant_queue_spare
-    expr: |
-      5 - llmd:variant_queue_depth
-```
-
-**Tier 2 — V1 Desired Replicas (scale-up/down logic):**
-```yaml
-  # Current replica count per deployment
-  - record: llmd:variant_current_replicas
-    expr: |
-      count by (namespace, model_name, deployment) (
-        vllm:kv_cache_usage_perc
-      )
-
-  # Desired replicas based on V1 saturation logic:
-  # Scale-up when spare < trigger (KvSpareTrigger default: 0.10)
-  # Uses ratio: current_replicas * (usage / target) to derive needed count
-  - record: llmd:variant_desired_replicas
-    expr: |
-      ceil(
-        llmd:variant_current_replicas
-        * llmd:variant_kv_saturation
-        / 0.80
-      )
-
-  # Scale-down guard: simulated load after removing one replica (N/(N-1) factor)
-  # Only safe when redistributed spare remains positive
-  - record: llmd:variant_scaledown_safe
-    expr: |
-      (
-        0.80 - (
-          llmd:variant_kv_saturation
-          * llmd:variant_current_replicas
-          / (llmd:variant_current_replicas - 1)
-        )
-      ) > 0
-      and llmd:variant_current_replicas > 2
-```
-
-Note: Threshold values (0.80, 5, etc.) are defaults. These can be parameterized per-deployment via separate recording rules or overridden by the WVA coordinator in Phase 2-3. Full token-capacity formulas (V2), if needed, are computed by WVA and emitted as metrics.
-
-**Tier 3 — Scale-from-Zero Signal:**
-```yaml
-  - record: llmd:model_has_pending_requests
-    expr: |
-      (sum by (target_model_name) (inference_extension_flow_control_queue_size) > 0)
-        or vector(0)
-```
-
-### What Still Requires WVA (Without the CRD)
-
-| Logic | WVA needed? | Why |
-|-------|------------|-----|
-| Basic saturation, scale-to/from-zero, P/D | **No** | Pure recording rules + HPA/KEDA |
-| Cost-aware multi-variant | **Yes** | Cross-deployment comparison |
-| GPU-limited fair-share | **Yes** | Global constraint enforcement |
-| Queueing model | **Yes** | Stateful parameter learning |
-
-WVA packages both the cost coordinator and queueing model as components of a single binary. It is much simpler than today's WVA: no CRD, no full optimization engine pipeline, no actuator/status management. It only adjusts HPA min/max bounds and emits computed metrics.
 
 ---
 
 ## Implementation Phases
 
-### Phase 0: Dual-Mode Foundation (non-breaking)
+### Phase 1: Dual-Mode (Non-Breaking)
 
-**Goal:** Deploy recording rules alongside WVA; validate correctness by comparing outputs.
+**Goal:** WVA supports both VA CRDs and annotated ScaledObjects/HPAs simultaneously.
 
 **Deliverables:**
-- Publish `PrometheusRule` resource with Tier 1-3 recording rules
-- Add annotations (`llmd.ai/model-id`, `llmd.ai/variant-cost`) to existing KEDA/HPA samples
-- Ensure vLLM ServiceMonitor (in `config/prometheus/`) adds `deployment` label via relabeling
-- Compare `llmd:variant_desired_replicas` recording rule vs `wva_desired_replicas` to validate
+- Add annotation-based discovery (watching ScaledObjects/HPAs) alongside existing CRD reconciler
+- WVA exposes `wva_desired_replicas` for both VA-discovered and annotation-discovered variants
+- Validation: annotated ScaledObject produces same metric output as equivalent VA CRD
+- Documentation for annotation-based setup
 
-**Success Criteria:** Recording rule output converges within 1 replica of WVA output across multiple scale events.
+**Success Criteria:** Users can run either mode; existing VA CRD deployments continue working unchanged.
+
+### Phase 2: Deprecation
+
+**Goal:** Mark VA CRD deprecated, guide users to annotations.
+
+**Deliverables:**
+- VA CRD marked deprecated (print warning on reconciliation)
+- `va-to-annotations` migration tool
+- Updated samples in `config/samples/` using annotation-based approach
+- Deprecation notice in release notes
+
+**Success Criteria:** All sample configurations and documentation use annotations. CI tests pass without VA CRDs.
+
+### Phase 3: CRD Removal
+
+**Deliverables:**
+- Remove VA CRD from `config/crd/`
+- Remove CRD reconciler code (`internal/controller/variantautoscaling_controller.go`)
+- Remove API types (`api/v1alpha1/`)
+- Remove RBAC for VA resources
+- Retain all analyzer, optimizer, and collector code (unchanged)
+
+**Success Criteria:** WVA binary no longer registers the CRD. All functionality works via annotations.
 
 ---
 
-### Phase 1: Single-Variant Direct HPA/KEDA
+## What Does NOT Change
 
-**Goal:** Users with one variant per model use HPA/KEDA directly — no WVA needed.
-
-**Deliverables:**
-- New kustomize overlay in `config/direct-hpa/` deploying:
-  - PrometheusRule (recording rules)
-  - HPA or KEDA ScaledObject pointing at `llmd:variant_desired_replicas`
-  - No VA CRD, no WVA controller
-- KEDA ScaledObject sample:
-  ```yaml
-  triggers:
-  - type: prometheus
-    metadata:
-      query: llmd:variant_desired_replicas{deployment="X",namespace="Y"}
-      threshold: '1'
-      activationThreshold: '0'
-  ```
-- Scale-to-zero: `idleReplicaCount: 0` + activation on EPP queue size
-- P/D: Separate ScaledObjects per role with role-filtered recording rules
-
-**Success Criteria:** Full scale-up, steady-state, scale-down, scale-to-zero, scale-from-zero lifecycle works without WVA under load (`hack/burst_load_generator.sh`).
-
----
-
-### Phase 2: Multi-Variant Cost Coordinator
-
-**Goal:** Multi-variant cost optimization without the VA CRD.
-
-**Deliverables:**
-
-WVA evolves into a lightweight coordinator (no CRD) that:
-- Discovers work by watching HPA/ScaledObjects annotated with `llmd.ai/model-id` and `llmd.ai/variant-cost`
-- Groups HPAs by model-id
-- Reads `llmd:variant_desired_replicas` and per-replica capacity from Prometheus
-- Runs cost-aware allocation (cheap variants get higher maxReplicas, expensive get lower)
-- **Does NOT do scaling** — only adjusts HPA `spec.minReplicas` / `spec.maxReplicas` bounds
-- GPU-limited mode: reads node accelerator inventory, enforces global GPU ceiling
-
-**Reuses code from:** `internal/engines/pipeline/cost_aware_optimizer.go` and `greedy_score_optimizer.go`
-
-**Success Criteria:** Under load, cheap variant scales first; on cooldown, expensive variant scales down first.
-
----
-
-### Phase 3: Queueing Model
-
-**Goal:** SLO-driven scaling without the VA CRD.
-
-**Deliverables:**
-- WVA packages both the cost coordinator (Phase 2) and the queueing model analyzer as components of the same binary
-- EPP already exposes TTFT/ITL metrics; WVA reads these from Prometheus alongside arrival rate (`inference_extension_scheduler_attempts_total`)
-- WVA runs parameter estimation and computes `max_rps_per_replica`
-- WVA emits `llmd:model_max_rps_per_replica` as a Prometheus metric
-- Recording rule derives desired replicas: `ceil(total_arrival_rate / llmd:model_max_rps_per_replica)`
-- HPA/KEDA consumes this recording rule
-
-**Success Criteria:** Queueing-model-driven desired replicas match expected capacity for known traffic patterns.
-
----
-
-### Phase 4: Deprecation & Removal
-
-**Deliverables:**
-- Mark VA CRD deprecated
-- Provide `va-to-hpa` migration tool (converts VA resources to annotated HPA/ScaledObjects)
-- Remove CRD from kustomize base (`config/crd/`)
-- Remove old controller code; retain reusable optimizer logic for the coordinator
-
----
-
-## EPP Changes Required
-
-| Change | Reason | Phase |
-|--------|--------|-------|
-| Add `namespace` label to `inference_extension_flow_control_queue_size` | Prevent cross-namespace collision (tracked as TODO #2309) | 0 |
-| Add `deployment` label to scheduler dispatch metrics | Per-variant arrival rate for recording rules | 1 |
-| Ensure TTFT/ITL metrics are exposed with model-level labels | WVA reads EPP latency metrics for queueing model | 3 |
+- WVA controller still runs as a Deployment
+- WVA still queries Prometheus for vLLM/EPP metrics
+- WVA still runs saturation analysis (V1, V2, queueing model)
+- WVA still runs cost-aware optimization and GPU-limited fair-share
+- WVA still exposes `wva_desired_replicas`, `wva_current_replicas`, `wva_desired_ratio`
+- KEDA/HPA still consumes `wva_desired_replicas` to perform actual scaling
+- Saturation scaling ConfigMap still works with same per-model override format
+- Scale-to-zero and scale-from-zero logic still works
 
 ---
 
 ## Alternatives Considered
 
-1. **Keep the VA CRD but simplify the controller** — Rejected because the CRD itself is the operational burden. Users already have HPA/KEDA; adding another object to manage provides marginal value over annotations.
+1. **Keep the CRD but make it optional** — Adds complexity (two discovery paths permanently) without ever removing the CRD burden. The dual-mode in Phase 1 is temporary.
 
-2. **Pure recording rules for everything (no controller at all)** — Not feasible for multi-variant cost optimization (cross-deployment logic) and queueing model (stateful Kalman filter). PromQL cannot express "compare costs across deployments and scale the cheapest."
+2. **Move everything to a ConfigMap** — ConfigMaps don't have per-object identity or namespace locality. Annotations on the ScaledObject/HPA keep configuration co-located with the scaling object.
 
-3. **Move all logic into EPP** — EPP is a request-routing component; making it responsible for scaling decisions conflates concerns. EPP provides metrics; a separate component (or HPA directly) should act on them.
+3. **Use labels instead of annotations** — Labels have character restrictions and are indexed (performance cost). Annotations are the Kubernetes convention for non-identifying metadata.
 
-4. **KEDA formula-based multi-trigger** — KEDA supports multiple triggers and can select max/min/average across them, but cannot express "scale deployment A because it's cheaper than deployment B."
+4. **Annotate Deployments instead of ScaledObjects** — Deployments don't know about scaling policy; the ScaledObject/HPA is the natural place for scaling-related metadata since WVA's output feeds into it directly.
 
 ---
 
 ## Open Questions
 
-1. Should the utilization-based approach (Tier 2 recording rule) use `kv_cache_usage_perc` alone, or combine it with queue depth in a weighted formula?
-2. For the queueing model reassessment: should we prototype a simpler throughput-ceiling model (observed max RPS at target P99 latency) before committing to the Kalman filter approach?
-3. Is adjusting `spec.minReplicas` / `spec.maxReplicas` on HPAs the right actuation for the coordinator, or should it adjust metric thresholds instead?
-4. Should the coordinator emit `llmd:variant_desired_replicas` per-variant (overriding the recording rule) rather than adjusting HPA bounds?
+1. Should WVA watch only KEDA ScaledObjects, or also plain HPAs? Proposal: support both — watch any object with the `llm-d.ai/managed` annotation that has a `scaleTargetRef`.
+1. For the `variant_name` label in `wva_desired_replicas`, should it use the scale target name or a separate `llm-d.ai/variant-name` annotation? Proposal: default to scale target name (from `scaleTargetRef`), allow override via annotation.
 
 ---
 
 ## Key Files
 
-- `internal/engines/pipeline/cost_aware_optimizer.go` — Cost-aware logic to retain in coordinator
-- `internal/engines/pipeline/greedy_score_optimizer.go` — GPU-limited logic to retain
-- `internal/collector/registration/saturation.go` — PromQL queries to convert to recording rules
-- `internal/engines/analyzers/saturation_v2/analyzer.go` — V2 formulas for reference
-- `config/samples/prometheus-adapter-values.yaml` — Update for new recording rule metrics
-- `config/prometheus/` — Add PrometheusRule resources
-- `config/direct-hpa/` — New kustomize overlay for direct HPA/KEDA mode
+- `api/v1alpha1/variantautoscaling_types.go` — CRD types to remove (Phase 3)
+- `internal/controller/variantautoscaling_controller.go` — CRD reconciler to replace with ScaledObject/HPA annotation watcher
+- `internal/controller/configmap_bootstrap.go` — ConfigMap discovery (unchanged)
+- `internal/engines/saturation/engine.go` — Saturation engine (unchanged)
+- `internal/engines/pipeline/cost_aware_optimizer.go` — Cost optimizer (unchanged)
+- `config/crd/` — CRD manifests to remove (Phase 3)
+- `config/samples/keda/` — Update to annotation-based examples
