@@ -260,16 +260,3 @@ va-to-annotations migrate --namespace production --apply
 ## Open Questions
 
 1. Should WVA watch only KEDA ScaledObjects, or also plain HPAs? Proposal: support both — watch any object with the `llm-d.ai/managed` annotation that has a `scaleTargetRef`.
-1. For the `variant_name` label in `wva_desired_replicas`, should it use the scale target name or a separate `llm-d.ai/variant-name` annotation? Proposal: default to scale target name (from `scaleTargetRef`), allow override via annotation.
-
----
-
-## Key Files
-
-- `api/v1alpha1/variantautoscaling_types.go` — CRD types to remove (Phase 3)
-- `internal/controller/variantautoscaling_controller.go` — CRD reconciler to replace with ScaledObject/HPA annotation watcher
-- `internal/controller/configmap_bootstrap.go` — ConfigMap discovery (unchanged)
-- `internal/engines/saturation/engine.go` — Saturation engine (unchanged)
-- `internal/engines/pipeline/cost_aware_optimizer.go` — Cost optimizer (unchanged)
-- `config/crd/` — CRD manifests to remove (Phase 3)
-- `config/samples/keda/` — Update to annotation-based examples
