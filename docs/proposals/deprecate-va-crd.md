@@ -35,12 +35,11 @@ Decoupling discovery from the CRD makes the ScaledObject/HPA the stable integrat
 ```
 Level 1 — bring your own metric producer:
 
-  Simple:       Prometheus recording rules ──────────────────────→ KEDA trigger → scale
-  Custom engine: any service writing to Prometheus ──────────────→ KEDA trigger → scale
+  Simple:       Prometheus / Prometheus recording rules (PromQL) ──────────────────────→ KEDA trigger → scale
 
 Level 2 — plug into WVA's engine:
 
-  Built-in:     vLLM/EPP → Prometheus → WVA (V1/V2/queueing) → wva_desired_replicas → KEDA → scale
+  Built-in:     vLLM/EPP → Prometheus → WVA (Legacy V1/V2/queueing) → wva_desired_replicas → KEDA → scale
   Custom:       vLLM/EPP → Prometheus → WVA (custom analyzer) → wva_desired_replicas → KEDA → scale
 ```
 
