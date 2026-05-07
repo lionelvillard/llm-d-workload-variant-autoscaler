@@ -63,7 +63,7 @@ The ScaledObject or HPA is the stable interface. Any metric producer can drive s
 | SLO-based with GPU-limited fair-share | ScaledObject + WVA + saturation config | Medium-High |
 | Fully custom algorithm | Any service writing to Prometheus | Low — bring your own |
 
-A team getting started does not need to understand WVA's analyzers, the saturation ConfigMap, or multi-variant optimization. They write a KEDA Prometheus trigger and scale. When requirements grow, they annotate the ScaledObject and WVA takes over those dimensions.
+A team getting started does not need to understand WVA's analyzers, the saturation ConfigMap, or multi-variant optimization. They write a KEDA Prometheus trigger and scale. When requirements grow, and performance needs increase, they annotate the ScaledObject and WVA takes over those dimensions.
 
 ### Level 2 — WVA's Scaling Engine is Itself Pluggable (Higher Barrier)
 
