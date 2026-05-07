@@ -16,7 +16,9 @@ The Workload Variant Autoscaler (WVA) introduces a custom VariantAutoscaling CRD
 - Tight coupling between WVA's internal optimization logic and a user-facing API surface
 - Additional RBAC, validation webhooks, and CRD versioning concerns
 
-The core value of WVA — computing `wva_desired_replicas` from vLLM/EPP metrics — does not require a dedicated CRD. WVA can discover what to scale from annotations on existing Kubernetes objects (Deployments, KEDA ScaledObjects, or HPAs).
+Beyond operational burden, the CRD creates an architectural bottleneck: every team that wants to scale a model variant must go through WVA's full pipeline, even when simpler approaches (a raw Prometheus trigger, a custom algorithm, a Kustomize-managed ScaledObject) would suffice. The CRD makes WVA the only possible integration point.
+
+The core value of WVA — computing `wva_desired_replicas` from vLLM/EPP metrics — does not require a dedicated CRD. WVA can discover what to scale from annotations on existing Kubernetes objects (KEDA ScaledObjects or HPAs), and teams that don't need WVA's advanced features can use those objects directly without involving WVA at all.
 
 ### Current Flow (unchanged)
 
@@ -25,6 +27,59 @@ vLLM/EPP metrics → Prometheus → WVA controller → wva_desired_replicas → 
 ```
 
 This flow remains the same. The only change is how WVA discovers which deployments to manage: annotations replace the CRD.
+
+### Enabled by This Change
+
+Decoupling discovery from the CRD makes the ScaledObject/HPA the stable integration point, not the VA CRD. Any metric producer can drive scaling by writing a compatible Prometheus metric:
+
+```
+Simple:   Prometheus recording rules ─────────────────────────→ KEDA trigger → scale
+Advanced: vLLM/EPP → Prometheus → WVA → wva_desired_replicas → KEDA trigger → scale
+Custom:   any metric producer ───────────────────────────────→ KEDA trigger → scale
+```
+
+---
+
+## Design Philosophy: Pluggable, Modular Scaling
+
+By removing the CRD, WVA shifts from being a mandatory control plane component to being one of several possible scaling engines. This lowers the entry barrier, fosters experimentation, and lets teams adopt exactly as much complexity as their scenario requires.
+
+### Progressive Complexity
+
+Operators choose the level of sophistication they need:
+
+| Scenario | What to deploy | WVA needed? |
+|----------|----------------|-------------|
+| Single model, load-based scaling | ScaledObject with Prometheus trigger | No |
+| Single model, saturation-aware | ScaledObject + WVA annotations | Yes |
+| Multi-variant, cost-aware | ScaledObject + WVA annotations + saturation config | Yes |
+| SLO-based with GPU-limited fair-share | ScaledObject + WVA annotations + full config | Yes |
+| Custom algorithm | Any service writing to Prometheus | No |
+
+A team getting started does not need to understand WVA's analyzers, the saturation ConfigMap, or multi-variant optimization. They write a KEDA Prometheus trigger and scale. When requirements grow, they annotate the ScaledObject and WVA takes over those dimensions.
+
+### WVA as a Pluggable Engine
+
+WVA is now a named, opt-in engine for advanced scenarios — not the only path. This opens the door for:
+
+- **Simpler direct-metric triggers**: raw saturation metrics via Prometheus recording rules, no WVA required
+- **Custom engines**: any service that implements a scaling algorithm and writes the result as a Prometheus metric integrates identically
+- **Gradual adoption**: start with a raw KEDA trigger, add WVA management when multi-variant optimization becomes necessary
+
+### Granular Feature Opt-In
+
+Features within WVA remain modular and annotation-driven. Omitting an annotation means the feature is skipped or defaults are used:
+
+| Feature | Annotation required |
+|---------|-------------------|
+| WVA management | `llm-d.ai/managed: "true"` |
+| Multi-variant grouping | `llm-d.ai/model-id` |
+| Cost-aware optimization | `llm-d.ai/variant-cost` |
+| GPU-limited fair-share | `llm-d.ai/gpus-per-replica` |
+| Scale-to-zero | `llm-d.ai/scale-to-zero-retention` |
+| P/D disaggregation role | `llm-d.ai/role` |
+
+This granularity means a single-model deployment that only needs saturation-based scaling pays no configuration cost for features it doesn't use.
 
 ---
 
@@ -36,6 +91,7 @@ This flow remains the same. The only change is how WVA discovers which deploymen
 4. Variant metadata (cost, model ID, GPU count) moves to annotations on the ScaledObject/HPA
 5. Reduce operational surface: fewer objects to create, no CRD versioning
 6. KEDA/HPA continues consuming `wva_desired_replicas` exactly as today
+7. Enable pluggable scaling: teams can use WVA, plain Prometheus triggers, or custom engines — all through the same ScaledObject/HPA interface
 
 ## Non-Goals
 
@@ -50,7 +106,7 @@ This flow remains the same. The only change is how WVA discovers which deploymen
 
 ### Discovery via Annotations
 
-WVA watches ScaledObjects (or HPAs) with the `llm-d.ai/managed: "true"` annotation. All configuration currently in the VA CRD moves to annotations on the ScaledObject:
+WVA watches ScaledObjects (or HPAs) with the `llm-d.ai/managed: "true"` annotation. A ScaledObject without this annotation is invisible to WVA and can use any trigger it wants. Adding the annotation opts into WVA management; additional annotations enable specific features. Configuration currently in the VA CRD moves to annotations on the ScaledObject:
 
 ```yaml
 apiVersion: keda.sh/v1alpha1
