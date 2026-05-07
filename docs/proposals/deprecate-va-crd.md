@@ -18,12 +18,12 @@ The Workload Variant Autoscaler (WVA) introduces a custom VariantAutoscaling CRD
 
 Beyond operational burden, the CRD creates an architectural bottleneck: every team that wants to scale a model variant must go through WVA's full pipeline, even when simpler approaches (a raw Prometheus trigger, a custom algorithm, a Kustomize-managed ScaledObject) would suffice. The CRD makes WVA the only possible integration point.
 
-The core value of WVA — computing `wva_desired_replicas` from vLLM/EPP metrics — does not require a dedicated CRD. WVA can discover what to scale from annotations on existing Kubernetes objects (KEDA ScaledObjects or HPAs), and teams that don't need WVA's advanced features can use those objects directly without involving WVA at all.
+The core value of WVA — computing `wva_desired_replicas` from vLLM/EPP metrics — does not require a dedicated CRD. WVA can discover what to scale from annotations on existing Kubernetes objects (KEDA ScaledObjects or HPAs), and teams that don't need WVA's advanced features can use those objects directly without involving WVA at all in most cases.
 
 ### Current Flow (unchanged)
 
 ```
-vLLM/EPP metrics → Prometheus → WVA engine → wva_desired_replicas → KEDA/HPA → scale
+vLLM/EPP metrics → Prometheus → WVA → wva_desired_replicas → KEDA/HPA → scale
 ```
 
 This flow remains the same. The only change is how WVA discovers which deployments to manage: annotations replace the CRD.
@@ -54,7 +54,7 @@ There are two levels of pluggability, each targeting a different entry point:
 
 ### Level 1 — The ScaledObject/HPA as Integration Point (Low Barrier)
 
-The ScaledObject or HPA is the stable interface. Any metric producer can drive scaling by writing a compatible Prometheus metric. WVA is one such producer, not the only one. Teams that don't need multi-variant coordination, cost-aware optimization, or SLO guarantees never need to deploy WVA at all:
+The ScaledObject or HPA is the stable interface. Any metric producer can drive scaling by writing a compatible Prometheus metric. WVA is one such producer, not the only one. EPP is another producer. Teams that don't need multi-variant coordination, cost-aware optimization, or SLO guarantees never need to deploy WVA at all:
 
 | Scenario | What to deploy | Entry barrier |
 |----------|----------------|---------------|
@@ -68,7 +68,7 @@ A team getting started does not need to understand WVA's analyzers, the saturati
 
 ### Level 2 — WVA's Scaling Engine is Itself Pluggable (Higher Barrier)
 
-For teams that need more than raw Prometheus triggers but want control over the scaling algorithm, WVA offers a second entry point: its internal engine is pluggable. WVA ships with built-in analyzers (V1 saturation, V2, queueing model), but the engine interface is open — a custom analyzer can be registered alongside the built-ins.
+For teams that need more than raw Prometheus triggers but want control over the scaling algorithm, WVA offers a second entry point: its internal engine is pluggable. WVA ships with built-in analyzers (legacy V1 saturation, V2, queueing model), but the engine interface is open — a custom analyzer can be registered alongside the built-ins.
 
 This means teams can implement their own scaling logic (token-throughput-based, latency-SLO-based, deadline-driven) and still get WVA's infrastructure for free: metric collection, Prometheus exposure, multi-variant coordination, cost-aware optimization framework, and scale-to-zero support.
 
