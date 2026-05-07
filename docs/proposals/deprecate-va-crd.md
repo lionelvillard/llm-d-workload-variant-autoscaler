@@ -23,7 +23,7 @@ The core value of WVA — computing `wva_desired_replicas` from vLLM/EPP metrics
 ### Current Flow (unchanged)
 
 ```
-vLLM/EPP metrics → Prometheus → WVA controller → wva_desired_replicas → KEDA/HPA → scale
+vLLM/EPP metrics → Prometheus → WVA engine → wva_desired_replicas → KEDA/HPA → scale
 ```
 
 This flow remains the same. The only change is how WVA discovers which deployments to manage: annotations replace the CRD.
@@ -33,9 +33,15 @@ This flow remains the same. The only change is how WVA discovers which deploymen
 Decoupling discovery from the CRD makes the ScaledObject/HPA the stable integration point, not the VA CRD. Any metric producer can drive scaling by writing a compatible Prometheus metric:
 
 ```
-Simple:   Prometheus recording rules ─────────────────────────→ KEDA trigger → scale
-Advanced: vLLM/EPP → Prometheus → WVA → wva_desired_replicas → KEDA trigger → scale
-Custom:   any metric producer ───────────────────────────────→ KEDA trigger → scale
+Level 1 — bring your own metric producer:
+
+  Simple:       Prometheus recording rules ──────────────────────→ KEDA trigger → scale
+  Custom engine: any service writing to Prometheus ──────────────→ KEDA trigger → scale
+
+Level 2 — plug into WVA's engine:
+
+  Built-in:     vLLM/EPP → Prometheus → WVA (V1/V2/queueing) → wva_desired_replicas → KEDA → scale
+  Custom:       vLLM/EPP → Prometheus → WVA (custom analyzer) → wva_desired_replicas → KEDA → scale
 ```
 
 ---
@@ -44,27 +50,29 @@ Custom:   any metric producer ────────────────�
 
 By removing the CRD, WVA shifts from being a mandatory control plane component to being one of several possible scaling engines. This lowers the entry barrier, fosters experimentation, and lets teams adopt exactly as much complexity as their scenario requires.
 
-### Progressive Complexity
+There are two levels of pluggability, each targeting a different entry point:
 
-Operators choose the level of sophistication they need:
+### Level 1 — The ScaledObject/HPA as Integration Point (Low Barrier)
 
-| Scenario | What to deploy | WVA needed? |
-|----------|----------------|-------------|
-| Single model, load-based scaling | ScaledObject with Prometheus trigger | No |
-| Single model, saturation-aware | ScaledObject + WVA annotations | Yes |
-| Multi-variant, cost-aware | ScaledObject + WVA annotations + saturation config | Yes |
-| SLO-based with GPU-limited fair-share | ScaledObject + WVA annotations + full config | Yes |
-| Custom algorithm | Any service writing to Prometheus | No |
+The ScaledObject or HPA is the stable interface. Any metric producer can drive scaling by writing a compatible Prometheus metric. WVA is one such producer, not the only one. Teams that don't need multi-variant coordination, cost-aware optimization, or SLO guarantees never need to deploy WVA at all:
+
+| Scenario | What to deploy | Entry barrier |
+|----------|----------------|---------------|
+| Single model, load-based scaling | ScaledObject with Prometheus trigger | Low — standard KEDA |
+| Single model, saturation-aware | Recording rules + ScaledObject trigger | Low — PromQL only |
+| Multi-variant, cost-aware | ScaledObject + WVA annotations | Medium — add WVA |
+| SLO-based with GPU-limited fair-share | ScaledObject + WVA + saturation config | Medium-High |
+| Fully custom algorithm | Any service writing to Prometheus | Low — bring your own |
 
 A team getting started does not need to understand WVA's analyzers, the saturation ConfigMap, or multi-variant optimization. They write a KEDA Prometheus trigger and scale. When requirements grow, they annotate the ScaledObject and WVA takes over those dimensions.
 
-### WVA as a Pluggable Engine
+### Level 2 — WVA's Scaling Engine is Itself Pluggable (Higher Barrier)
 
-WVA is now a named, opt-in engine for advanced scenarios — not the only path. This opens the door for:
+For teams that need more than raw Prometheus triggers but want control over the scaling algorithm, WVA offers a second entry point: its internal engine is pluggable. WVA ships with built-in analyzers (V1 saturation, V2, queueing model), but the engine interface is open — a custom analyzer can be registered alongside the built-ins.
 
-- **Simpler direct-metric triggers**: raw saturation metrics via Prometheus recording rules, no WVA required
-- **Custom engines**: any service that implements a scaling algorithm and writes the result as a Prometheus metric integrates identically
-- **Gradual adoption**: start with a raw KEDA trigger, add WVA management when multi-variant optimization becomes necessary
+This means teams can implement their own scaling logic (token-throughput-based, latency-SLO-based, deadline-driven) and still get WVA's infrastructure for free: metric collection, Prometheus exposure, multi-variant coordination, cost-aware optimization framework, and scale-to-zero support.
+
+The trade-off is explicit: **Level 2 has a higher barrier** — understanding WVA's internal engine interface, contributing Go code, and running WVA as a dependency. Level 1 requires only YAML. Both are valid; the choice depends on how much of WVA's infrastructure the team wants to reuse versus build independently.
 
 ### Granular Feature Opt-In
 
