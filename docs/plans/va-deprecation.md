@@ -150,6 +150,24 @@ These overlays are the templates Phase 2 will promote to be the default and Phas
 - **Integration**: extend `internal/controller/variantautoscaling_controller_test.go` with a case that creates only an annotated ScaledObject (no VA) and asserts the engine produces `wva_desired_replicas` with correct labels.
 - **E2E**: add one new test (e.g. `test/e2e/annotation_discovery_test.go`) mirroring `smoke_test.go` but driven by annotations and backed by the kustomize overlays from 1.7. Keep existing VA-based e2e tests green.
 
+### 1.9 Documentation update
+
+Add annotation-based discovery coverage to the existing user-facing docs without removing any CRD content (that is Phase 2's job).
+
+- `docs/user-guide/keda-integration.md` — add a new "Annotation-based setup (recommended)" section before the existing CRD-based section. Show the minimal ScaledObject YAML with the three annotations, the Prometheus trigger, and the expected `wva_desired_replicas` output. Note that no VariantAutoscaling object is needed.
+- `docs/user-guide/hpa-integration.md` — same treatment for the HPA path: add an annotation-based section covering the three required annotations and the External metrics entry.
+- `docs/user-guide/configuration.md` — add an "Annotation schema" table documenting each `llm-d.ai/*` key (name, required/optional, default, description) so users have a single reference.
+- Both integration docs: add a one-line note at the top of the existing CRD section flagging it as the legacy path (`> **Note:** The VariantAutoscaling CRD path is being deprecated. Prefer the annotation-based setup above.`).
+
+### 1.10 Well-lit path update
+
+Ensure a new operator can adopt WVA annotation-based scaling from the project entry points without ever encountering the VA CRD.
+
+- `README.md` — replace or supplement the quick-start snippet (currently VA-centric) with an annotation-based ScaledObject or HPA example as the primary example. Keep a "Legacy CRD path" collapsible or footnote for existing users.
+- `docs/user-guide/configuration.md` (getting-started flow) — reorder the introduction so annotation-based usage is presented first; move CRD-based usage to a "Legacy" subsection.
+- `docs/integrations/prometheus.md` (or equivalent integration doc) — confirm the `wva_desired_replicas` metric label documentation reflects that the metric is emitted identically for both annotation-sourced and CRD-sourced variants, so the Prometheus/KEDA query examples work for both.
+- Verify that following only the well-lit path docs (annotation-based) from a clean clone produces a working WVA deployment on a kind cluster without touching any VA CRD YAML.
+
 ---
 
 ## Phase 2 — Deprecation
