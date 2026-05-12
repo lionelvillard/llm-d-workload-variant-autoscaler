@@ -31,14 +31,11 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	"github.com/go-logr/logr"
 	flag "github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
@@ -55,7 +52,6 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/source"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/source/prometheus"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/controller"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/controller/indexers"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/datastore"
@@ -93,70 +89,6 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-// checkKEDACRD checks if the KEDA ScaledObject CRD is installed in the cluster.
-// TODO: this is checked once at start up for now. We should handle KEDA installed after controller starts.
-func checkKEDACRD(restConfig *rest.Config, logger logr.Logger) bool {
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
-	if err != nil {
-		logger.Error(err, "failed to create discovery client for CRD detection - assuming KEDA not installed")
-		return false
-	}
-
-	_, apiLists, err := discoveryClient.ServerGroupsAndResources()
-	if err != nil {
-		if apiLists == nil {
-			logger.Error(err, "failed to discover API resources - assuming KEDA not installed")
-			return false
-		}
-		logger.V(1).Info("partial error discovering API resources (this is usually fine)", "error", err)
-	}
-
-	for _, apiList := range apiLists {
-		if apiList.GroupVersion == "keda.sh/v1alpha1" {
-			for _, resource := range apiList.APIResources {
-				if resource.Kind == "ScaledObject" {
-					return true
-				}
-			}
-		}
-	}
-
-	return false
-}
-
-// checkLeaderWorkerSetCRD checks if the LeaderWorkerSet CRD is installed in the cluster
-// TODO: this is checked once at start up for now. We should handle LWS installed after controller starts.
-func checkLeaderWorkerSetCRD(restConfig *rest.Config, logger logr.Logger) bool {
-	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
-	if err != nil {
-		logger.Error(err, "failed to create discovery client for CRD detection - assuming LWS not installed")
-		return false
-	}
-
-	// Check if leaderworkersets.leaderworkerset.x-k8s.io CRD exists
-	_, apiLists, err := discoveryClient.ServerGroupsAndResources()
-	if err != nil {
-		// Partial errors are common (e.g., unavailable API services), so check if we got any results
-		if apiLists == nil {
-			logger.Error(err, "failed to discover API resources - assuming LWS not installed")
-			return false
-		}
-		// Log but continue with partial results
-		logger.V(1).Info("partial error discovering API resources (this is usually fine)", "error", err)
-	}
-
-	for _, apiList := range apiLists {
-		if apiList.GroupVersion == constants.LeaderWorkerSetAPIVersion {
-			for _, resource := range apiList.APIResources {
-				if resource.Kind == constants.LeaderWorkerSetKind {
-					return true
-				}
-			}
-		}
-	}
-
-	return false
-}
 
 // nolint:gocyclo
 func main() {
@@ -234,7 +166,7 @@ func main() {
 	setupLog.Info("Configuration loaded successfully")
 
 	// Conditionally add LeaderWorkerSet scheme if CRD exists
-	lwsEnabled := checkLeaderWorkerSetCRD(restConfig, setupLog)
+	lwsEnabled := utils.CheckLeaderWorkerSetCRD(restConfig, setupLog)
 	if lwsEnabled {
 		if err := lwsv1.AddToScheme(scheme); err != nil {
 			setupLog.Error(err, "failed to add LeaderWorkerSet scheme")
@@ -246,7 +178,7 @@ func main() {
 	}
 
 	// Detect KEDA for annotation-based ScaledObject discovery (dual-mode, Phase 1)
-	kedaEnabled := checkKEDACRD(restConfig, setupLog)
+	kedaEnabled := utils.CheckKEDACRD(restConfig, setupLog)
 	if kedaEnabled {
 		setupLog.Info("KEDA ScaledObject CRD detected - annotation-based ScaledObject discovery enabled")
 	} else {
