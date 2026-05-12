@@ -60,6 +60,7 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/metrics"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils/crd"
 	poolutil "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils/pool"
 	promoperator "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus/client_golang/api"
@@ -88,7 +89,6 @@ func init() {
 	// Note: LeaderWorkerSet scheme is added conditionally in main() after checking if CRD exists
 	// +kubebuilder:scaffold:scheme
 }
-
 
 // nolint:gocyclo
 func main() {
@@ -166,7 +166,7 @@ func main() {
 	setupLog.Info("Configuration loaded successfully")
 
 	// Conditionally add LeaderWorkerSet scheme if CRD exists
-	lwsEnabled := utils.CheckLeaderWorkerSetCRD(restConfig, setupLog)
+	lwsEnabled := crd.CheckLeaderWorkerSetCRD(restConfig, setupLog)
 	if lwsEnabled {
 		if err := lwsv1.AddToScheme(scheme); err != nil {
 			setupLog.Error(err, "failed to add LeaderWorkerSet scheme")
@@ -178,7 +178,7 @@ func main() {
 	}
 
 	// Detect KEDA for annotation-based ScaledObject discovery (dual-mode, Phase 1)
-	kedaEnabled := utils.CheckKEDACRD(restConfig, setupLog)
+	kedaEnabled := crd.CheckKEDACRD(restConfig, setupLog)
 	if kedaEnabled {
 		setupLog.Info("KEDA ScaledObject CRD detected - annotation-based ScaledObject discovery enabled")
 	} else {
