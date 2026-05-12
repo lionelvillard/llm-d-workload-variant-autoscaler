@@ -18,12 +18,17 @@ package utils
 
 import (
 	"context"
+	"fmt"
 
+	kedav1alpha1 "github.com/kedacore/keda/v2/apis/keda/v1alpha1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	wvav1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/annotations"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/metrics"
@@ -161,6 +166,9 @@ func filterVariantsByScaleTargetAccessor(ctx context.Context, client client.Clie
 // readyVariantAutoscalings retrieves all VariantAutoscaling resources that are ready for optimization
 // using the informer cache. When CONTROLLER_INSTANCE is configured, only VAs with matching
 // controller-instance labels are returned to enable multi-controller isolation.
+// It also merges in-memory VAs synthesized from annotated ScaledObjects and HPAs
+// (annotation-based discovery, Phase 1 dual-mode). CRD-sourced VAs take precedence
+// when both refer to the same scale target in the same namespace.
 func readyVariantAutoscalings(ctx context.Context, k8sClient client.Client) ([]wvav1alpha1.VariantAutoscaling, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
@@ -195,7 +203,89 @@ func readyVariantAutoscalings(ctx context.Context, k8sClient client.Client) ([]w
 	logger.V(logging.DEBUG).Info("Found VariantAutoscaling resources ready for optimization",
 		"count", len(readyVAs),
 		"controllerInstance", controllerInstance)
+
+	// Merge annotation-sourced variants (dual-mode: CRD wins on conflict).
+	annotated, err := annotationSourcedVariants(ctx, k8sClient)
+	if err != nil {
+		// Non-fatal: log and continue with CRD-sourced only.
+		logger.Error(err, "Failed to list annotation-sourced variants, continuing with CRD-sourced only")
+		return readyVAs, nil
+	}
+	if len(annotated) == 0 {
+		return readyVAs, nil
+	}
+
+	// Build set of (namespace/scaleTargetRef.name) already covered by CRD-sourced VAs.
+	crdTargets := make(map[string]bool, len(readyVAs))
+	for _, va := range readyVAs {
+		if va.Spec.ScaleTargetRef.Name != "" {
+			crdTargets[GetNamespacedKey(va.Namespace, va.Spec.ScaleTargetRef.Name)] = true
+		}
+	}
+	for _, va := range annotated {
+		if !crdTargets[GetNamespacedKey(va.Namespace, va.Spec.ScaleTargetRef.Name)] {
+			readyVAs = append(readyVAs, va)
+		}
+	}
+
+	logger.V(logging.DEBUG).Info("Merged annotation-sourced variants",
+		"annotatedCount", len(annotated),
+		"totalCount", len(readyVAs))
+
 	return readyVAs, nil
+}
+
+// annotationSourcedVariants lists HPAs and KEDA ScaledObjects bearing llm-d.ai/managed: "true"
+// and synthesizes in-memory VariantAutoscaling objects from them. ScaledObject discovery is
+// skipped gracefully when the KEDA CRD is not installed.
+func annotationSourcedVariants(ctx context.Context, k8sClient client.Client) ([]wvav1alpha1.VariantAutoscaling, error) {
+	logger := ctrl.LoggerFrom(ctx)
+	var result []wvav1alpha1.VariantAutoscaling
+
+	// HPAs are a core Kubernetes type — always available.
+	var hpaList autoscalingv2.HorizontalPodAutoscalerList
+	if err := k8sClient.List(ctx, &hpaList); err != nil {
+		return nil, fmt.Errorf("listing HPAs: %w", err)
+	}
+	for i := range hpaList.Items {
+		hpa := &hpaList.Items[i]
+		if !annotations.IsManaged(hpa) || !hpa.DeletionTimestamp.IsZero() {
+			continue
+		}
+		va, err := VariantAutoscalingFromHPA(hpa)
+		if err != nil {
+			logger.V(logging.DEBUG).Info("Skipping HPA with invalid WVA annotations",
+				"namespace", hpa.Namespace, "name", hpa.Name, "error", err)
+			continue
+		}
+		result = append(result, *va)
+	}
+
+	// KEDA ScaledObjects — may not be installed; handle gracefully.
+	var soList kedav1alpha1.ScaledObjectList
+	if err := k8sClient.List(ctx, &soList); err != nil {
+		if apimeta.IsNoMatchError(err) {
+			logger.V(logging.DEBUG).Info("KEDA ScaledObject CRD not available, skipping annotation discovery for ScaledObjects")
+		} else {
+			return result, fmt.Errorf("listing ScaledObjects: %w", err)
+		}
+	} else {
+		for i := range soList.Items {
+			so := &soList.Items[i]
+			if !annotations.IsManaged(so) || !so.DeletionTimestamp.IsZero() {
+				continue
+			}
+			va, err := VariantAutoscalingFromScaledObject(so)
+			if err != nil {
+				logger.V(logging.DEBUG).Info("Skipping ScaledObject with invalid WVA annotations",
+					"namespace", so.Namespace, "name", so.Name, "error", err)
+				continue
+			}
+			result = append(result, *va)
+		}
+	}
+
+	return result, nil
 }
 
 // isActive explicitly requires that replicas > 0

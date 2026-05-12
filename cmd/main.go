@@ -50,6 +50,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	kedav1alpha1 "github.com/kedacore/keda/v2/apis/keda/v1alpha1"
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/source"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/source/prometheus"
@@ -85,8 +86,42 @@ func init() {
 	utilruntime.Must(promoperator.AddToScheme(scheme))
 	utilruntime.Must(inferencePoolV1.Install(scheme))
 	utilruntime.Must(inferencePoolV1alpha2.Install(scheme))
+	// KEDA scheme is registered unconditionally so the client can list ScaledObjects
+	// when the CRD is present. Listing fails gracefully (NoMatchError) when not installed.
+	utilruntime.Must(kedav1alpha1.AddToScheme(scheme))
 	// Note: LeaderWorkerSet scheme is added conditionally in main() after checking if CRD exists
 	// +kubebuilder:scaffold:scheme
+}
+
+// checkKEDACRD checks if the KEDA ScaledObject CRD is installed in the cluster.
+// TODO: this is checked once at start up for now. We should handle KEDA installed after controller starts.
+func checkKEDACRD(restConfig *rest.Config, logger logr.Logger) bool {
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
+	if err != nil {
+		logger.Error(err, "failed to create discovery client for CRD detection - assuming KEDA not installed")
+		return false
+	}
+
+	_, apiLists, err := discoveryClient.ServerGroupsAndResources()
+	if err != nil {
+		if apiLists == nil {
+			logger.Error(err, "failed to discover API resources - assuming KEDA not installed")
+			return false
+		}
+		logger.V(1).Info("partial error discovering API resources (this is usually fine)", "error", err)
+	}
+
+	for _, apiList := range apiLists {
+		if apiList.GroupVersion == "keda.sh/v1alpha1" {
+			for _, resource := range apiList.APIResources {
+				if resource.Kind == "ScaledObject" {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 // checkLeaderWorkerSetCRD checks if the LeaderWorkerSet CRD is installed in the cluster
@@ -208,6 +243,14 @@ func main() {
 		setupLog.Info("LeaderWorkerSet CRD detected - support enabled")
 	} else {
 		setupLog.Info("LeaderWorkerSet CRD not found - support disabled (Deployment-only mode)")
+	}
+
+	// Detect KEDA for annotation-based ScaledObject discovery (dual-mode, Phase 1)
+	kedaEnabled := checkKEDACRD(restConfig, setupLog)
+	if kedaEnabled {
+		setupLog.Info("KEDA ScaledObject CRD detected - annotation-based ScaledObject discovery enabled")
+	} else {
+		setupLog.Info("KEDA ScaledObject CRD not found - annotation-based discovery limited to HPAs")
 	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
@@ -510,6 +553,7 @@ func main() {
 		cfg,
 		ds,
 		lwsEnabled,
+		kedaEnabled,
 	)
 
 	// Setup the controller with the manager
