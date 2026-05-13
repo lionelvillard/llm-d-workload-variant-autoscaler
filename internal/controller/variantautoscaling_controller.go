@@ -52,8 +52,8 @@ type VariantAutoscalingReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
-	Recorder    record.EventRecorder
-	Config      *config.Config      // Unified configuration (injected from main.go)
+	Recorder   record.EventRecorder
+	Config     *config.Config      // Unified configuration (injected from main.go)
 	Datastore  datastore.Datastore // Datastore for namespace tracking and InferencePool data
 	lwsEnabled bool                // Whether LeaderWorkerSet support is enabled (CRD detected at startup)
 }

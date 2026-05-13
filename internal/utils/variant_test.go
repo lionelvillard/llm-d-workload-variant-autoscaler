@@ -159,7 +159,7 @@ func variantTestScheme(t *testing.T) *runtime.Scheme {
 	return s
 }
 
-func managedHPA(ns, name, targetKind, targetName, modelID string) *autoscalingv2.HorizontalPodAutoscaler {
+func managedHPA(ns, name, targetName, modelID string) *autoscalingv2.HorizontalPodAutoscaler {
 	return &autoscalingv2.HorizontalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -170,7 +170,7 @@ func managedHPA(ns, name, targetKind, targetName, modelID string) *autoscalingv2
 			},
 		},
 		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
-			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{Kind: targetKind, Name: targetName},
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{Kind: "Deployment", Name: targetName},
 			MaxReplicas:    5,
 		},
 	}
@@ -198,8 +198,8 @@ func TestAnnotationSourcedVariants(t *testing.T) {
 	t.Run("HPAs only", func(t *testing.T) {
 		s := variantTestScheme(t)
 		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
-			managedHPA("ns1", "hpa-a", "Deployment", "deploy-a", "model-x"),
-			managedHPA("ns1", "hpa-b", "Deployment", "deploy-b", "model-x"),
+			managedHPA("ns1", "hpa-a", "deploy-a", "model-x"),
+			managedHPA("ns1", "hpa-b", "deploy-b", "model-x"),
 			// unmanaged HPA — must be filtered out
 			&autoscalingv2.HorizontalPodAutoscaler{
 				ObjectMeta: metav1.ObjectMeta{Name: "hpa-unmanaged", Namespace: "ns1"},
@@ -234,7 +234,7 @@ func TestAnnotationSourcedVariants(t *testing.T) {
 	t.Run("mixed HPAs and ScaledObjects", func(t *testing.T) {
 		s := variantTestScheme(t)
 		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
-			managedHPA("ns1", "hpa-a", "Deployment", "deploy-a", "model-x"),
+			managedHPA("ns1", "hpa-a", "deploy-a", "model-x"),
 			managedSO("ns1", "so-b", "Deployment", "deploy-b", "model-x"),
 		).Build()
 
@@ -251,7 +251,7 @@ func TestAnnotationSourcedVariants(t *testing.T) {
 		s := variantTestScheme(t)
 		soGK := schema.GroupKind{Group: "keda.sh", Kind: "ScaledObject"}
 		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
-			managedHPA("ns1", "hpa-a", "Deployment", "deploy-a", "model-x"),
+			managedHPA("ns1", "hpa-a", "deploy-a", "model-x"),
 		).WithInterceptorFuncs(interceptor.Funcs{
 			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 				if _, ok := list.(*kedav1alpha1.ScaledObjectList); ok {
@@ -291,7 +291,7 @@ func TestAnnotationSourcedVariants(t *testing.T) {
 		s := variantTestScheme(t)
 		// Both an HPA and a ScaledObject point at the same Deployment — ScaledObject wins.
 		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
-			managedHPA("ns1", "hpa-a", "Deployment", "deploy-a", "model-hpa"),
+			managedHPA("ns1", "hpa-a", "deploy-a", "model-hpa"),
 			managedSO("ns1", "so-a", "Deployment", "deploy-a", "model-so"),
 		).Build()
 
@@ -325,7 +325,7 @@ func TestReadyVariantAutoscalingsMergePath(t *testing.T) {
 		s := variantTestScheme(t)
 		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
 			makeCRDVA("ns1", "va-crd", "Deployment", "deploy-crd"),
-			managedHPA("ns2", "hpa-ann", "Deployment", "deploy-ann", "model-ann"),
+			managedHPA("ns2", "hpa-ann", "deploy-ann", "model-ann"),
 		).Build()
 
 		result, err := readyVariantAutoscalings(ctx, cl)
@@ -341,7 +341,7 @@ func TestReadyVariantAutoscalingsMergePath(t *testing.T) {
 		s := variantTestScheme(t)
 		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
 			makeCRDVA("ns1", "va-crd", "Deployment", "shared-deploy"),
-			managedHPA("ns1", "hpa-ann", "Deployment", "shared-deploy", "model-ann"),
+			managedHPA("ns1", "hpa-ann", "shared-deploy", "model-ann"),
 		).Build()
 
 		result, err := readyVariantAutoscalings(ctx, cl)
