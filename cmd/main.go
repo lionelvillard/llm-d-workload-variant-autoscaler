@@ -485,13 +485,32 @@ func main() {
 		cfg,
 		ds,
 		lwsEnabled,
-		kedaEnabled,
 	)
 
 	// Setup the controller with the manager
 	if err = reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller")
 		os.Exit(1)
+	}
+
+	// HPAReconciler: tracks namespaces for annotation-based discovery (always registered).
+	if err = (&controller.HPAReconciler{
+		Client:    mgr.GetClient(),
+		Datastore: ds,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create HPA controller")
+		os.Exit(1)
+	}
+
+	// ScaledObjectReconciler: registered only when KEDA CRD is present.
+	if kedaEnabled {
+		if err = (&controller.ScaledObjectReconciler{
+			Client:    mgr.GetClient(),
+			Datastore: ds,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create ScaledObject controller")
+			os.Exit(1)
+		}
 	}
 	// +kubebuilder:scaffold:builder
 

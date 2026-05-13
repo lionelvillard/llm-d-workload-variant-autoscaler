@@ -10,7 +10,7 @@ This plan implements the proposal end-to-end across the three phases it defines:
 
 - **Phase 1** — Dual-mode: add annotation-based discovery without breaking existing VA CRD users.
 - **Phase 2** — Deprecation: mark the VA CRD deprecated, point users at annotations (docs-only migration; no CLI).
-- **Phase 3** — Removal: delete CRD manifests, reconciler, RBAC, and public API types. Keep `VariantAutoscaling` as an **internal struct** to minimize churn in the collector/analyzer/optimizer.
+- **Phase 3** — Removal: delete CRD manifests, VA reconciler, RBAC, and public API types. Keep `VariantAutoscaling` as an **internal struct** to minimize churn in the collector/analyzer/optimizer. The `HPAReconciler` and `ScaledObjectReconciler` from Phase 1 remain.
 
 Watch surfaces in Phase 1: both **KEDA ScaledObject** and **HPA** (any object bearing `llm-d.ai/managed: "true"` with a `scaleTargetRef`).
 
@@ -25,7 +25,9 @@ Watch surfaces in Phase 1: both **KEDA ScaledObject** and **HPA** (any object be
 - `charts/workload-variant-autoscaler/crds/llmd.ai_variantautoscalings.yaml`
 
 **Controller**
-- `internal/controller/variantautoscaling_controller.go` — reconciler, RBAC markers, watch wiring
+- `internal/controller/variantautoscaling_controller.go` — existing VA reconciler (untouched in Phase 1)
+- `internal/controller/hpa_reconciler.go` — new HPAReconciler (created in 1.5)
+- `internal/controller/scaledobject_reconciler.go` — new ScaledObjectReconciler (created in 1.5)
 - `internal/controller/indexers/indexers.go`
 - `cmd/main.go` (scheme registration L83-84, reconciler wiring L506-516)
 
@@ -59,7 +61,7 @@ Watch surfaces in Phase 1: both **KEDA ScaledObject** and **HPA** (any object be
 
 ## Phase 1 — Dual-Mode Discovery
 
-Add annotation-based discovery that runs alongside the existing CRD reconciler. Both paths feed the same internal pipeline.
+Add annotation-based discovery that runs alongside the existing VA CRD reconciler. Two new dedicated reconcilers (`HPAReconciler`, `ScaledObjectReconciler`) handle namespace tracking; both paths feed the same internal pipeline.
 
 ### 1.1 Annotation schema package
 
@@ -101,34 +103,34 @@ The single engine entry point at `internal/engines/saturation/engine.go:259` con
 
 ### 1.4 Status writeback handles both sources
 
-Today the reconciler patches `va.status.desiredOptimizedAlloc` after the engine runs. Synthetic (annotation-sourced) variants have no VA object to patch.
+Today the VA reconciler patches `va.status.desiredOptimizedAlloc` after the engine runs. Synthetic (annotation-sourced) variants have no VA object to patch.
 
 - In `applySaturationDecisions` (and equivalent paths), check the synthetic tag from 1.2.
   - Synthetic → skip the status patch; the `wva_desired_replicas` metric emission is the sole output (matches the proposal's "Actuation: None — KEDA/HPA reads the metric").
   - CRD-sourced → unchanged behavior.
 - Verify the metric labels (`variant_name`, `exported_namespace`) match for both sources so KEDA triggers don't need to know which mode produced the metric.
 
-### 1.5 Watch ScaledObjects / HPAs
+### 1.5 New reconcilers for HPA and ScaledObject
 
-Add a lightweight controller (or extend the existing `VariantAutoscalingReconciler.SetupWithManager`) to watch:
+Following the project convention of one reconciler per Kubernetes object kind, create two new dedicated reconcilers:
 
-- `kedav1alpha1.ScaledObject` with predicate `annotations[llm-d.ai/managed] == "true"`
-- `autoscalingv2.HorizontalPodAutoscaler` with the same predicate
+**`internal/controller/hpa_reconciler.go`** — `HPAReconciler`
+- Watches `autoscalingv2.HorizontalPodAutoscaler` with `AnnotatedScalerPredicate()`.
+- `Reconcile` body: if object is being deleted or no longer managed (`!annotations.IsManaged`), call `datastore.NamespaceUntrack`; otherwise call `datastore.NamespaceTrack`. Return `ctrl.Result{}` with no requeue — namespace tracking is the sole side-effect.
+- `+kubebuilder:rbac` markers for `autoscaling/horizontalpodautoscalers` (get;list;watch) live in this file.
+- Registered unconditionally in `cmd/main.go` alongside the other reconcilers.
 
-The handler's only job is to call `datastore.NamespaceTrack("AnnotatedScaler", name, namespace)` on add/update and `Untrack` on delete, so namespace-local ConfigMap discovery keeps working. The engine's polling tick will pick up changes on the next cycle — no per-object Reconcile needed.
+**`internal/controller/scaledobject_reconciler.go`** — `ScaledObjectReconciler`
+- Watches `kedav1alpha1.ScaledObject` with `AnnotatedScalerPredicate()`.
+- Same `Reconcile` body as `HPAReconciler` (track/untrack).
+- `+kubebuilder:rbac` markers for `keda.sh/scaledobjects` (get;list;watch) live in this file.
+- Registered in `cmd/main.go` **only when** `kedaEnabled == true` (KEDA CRD detected at startup), mirroring the existing `lwsEnabled` pattern.
 
-Add a KEDA detection step in `cmd/main.go` (mirroring the existing `lwsEnabled` check). If KEDA CRDs aren't present, skip the ScaledObject watch but still install the HPA watch.
+Add a KEDA detection step in `cmd/main.go` (mirroring the existing `lwsEnabled` check) if not already present. If KEDA CRDs aren't present, skip `ScaledObjectReconciler` registration but still register `HPAReconciler`.
 
 ### 1.6 RBAC for watching
 
-Extend `+kubebuilder:rbac` markers (in the file created in 1.5) and `config/rbac/role.yaml`:
-
-```
-+kubebuilder:rbac:groups=keda.sh,resources=scaledobjects,verbs=get;list;watch
-+kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
-```
-
-Regenerate role.yaml via `make manifests`.
+The `+kubebuilder:rbac` markers live in the new reconciler files created in 1.5 (`hpa_reconciler.go` and `scaledobject_reconciler.go`) rather than in `variantautoscaling_controller.go`. Remove the existing markers from `variantautoscaling_controller.go` if they were added there, regenerate `config/rbac/role.yaml` via `make manifests`, and update the Helm chart template (`charts/workload-variant-autoscaler/templates/rbac/role.yaml`) to mirror the change.
 
 ### 1.7 Kustomization samples for annotation-based scaling
 
@@ -147,7 +149,7 @@ These overlays are the templates Phase 2 will promote to be the default and Phas
 ### 1.8 Tests
 
 - **Unit**: `internal/annotations/annotations_test.go` (parsing/defaulting/validation), `internal/utils/variant_fromannotations_test.go` (synthesis from fake ScaledObject/HPA).
-- **Integration**: extend `internal/controller/variantautoscaling_controller_test.go` with a case that creates only an annotated ScaledObject (no VA) and asserts the engine produces `wva_desired_replicas` with correct labels.
+- **Integration**: add `internal/controller/hpa_reconciler_test.go` and `internal/controller/scaledobject_reconciler_test.go` covering the track/untrack logic; extend `internal/controller/variantautoscaling_controller_test.go` with a case that creates only an annotated ScaledObject (no VA) and asserts the engine produces `wva_desired_replicas` with correct labels.
 - **E2E (new annotation path)**: add `test/e2e/annotation_discovery_test.go` mirroring `smoke_test.go` but driven by annotations and backed by the kustomize overlays from 1.7. Uses the existing `test/e2e/fixtures/hpa_builder.go` and `test/e2e/fixtures/scaled_object_builder.go` (with annotation helpers added) instead of `va_builder.go`. Keep existing VA-based e2e tests green.
 - **E2E (extend existing tests)**: update the existing e2e tests (`smoke_test.go`, `limiter_test.go`, `saturation_analyzer_path_test.go`, `scale_from_zero_test.go`) to exercise both VA-based and annotation-based (HPA / KEDA ScaledObject) setup paths for the same scenarios, so dual-mode is validated end-to-end across all test suites and not only in the new annotation-discovery test.
 
@@ -231,11 +233,11 @@ Keep the type as the in-memory representation for the pipeline, but stop publish
 - Delete `charts/workload-variant-autoscaler/crds/llmd.ai_variantautoscalings.yaml`.
 - Remove `llmdVariantAutoscalingV1alpha1.AddToScheme(scheme)` from `cmd/main.go` (and the import).
 
-### 3.3 Delete the reconciler
+### 3.3 Delete the VA reconciler
 
 - Remove `internal/controller/variantautoscaling_controller.go` and its test.
 - Remove `internal/controller/indexers/indexers.go` if it only indexed VAs.
-- Keep the annotation-watcher controller from Phase 1.5 (now the only discovery controller).
+- Keep `internal/controller/hpa_reconciler.go` and `internal/controller/scaledobject_reconciler.go` from Phase 1.5 (now the only discovery controllers).
 - Remove `controller.NewVariantAutoscalingReconciler(...)` wiring from `cmd/main.go`.
 
 ### 3.4 Delete RBAC

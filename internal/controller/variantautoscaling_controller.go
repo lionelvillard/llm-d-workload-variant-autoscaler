@@ -20,10 +20,8 @@ import (
 	"context"
 	"fmt"
 
-	kedav1alpha1 "github.com/kedacore/keda/v2/apis/keda/v1alpha1"
 	promoperator "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
-	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,7 +36,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/annotations"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/controller/indexers"
@@ -57,9 +54,8 @@ type VariantAutoscalingReconciler struct {
 
 	Recorder    record.EventRecorder
 	Config      *config.Config      // Unified configuration (injected from main.go)
-	Datastore   datastore.Datastore // Datastore for namespace tracking and InferencePool data
-	lwsEnabled  bool                // Whether LeaderWorkerSet support is enabled (CRD detected at startup)
-	kedaEnabled bool                // Whether KEDA ScaledObject CRD is installed (detected at startup)
+	Datastore  datastore.Datastore // Datastore for namespace tracking and InferencePool data
+	lwsEnabled bool                // Whether LeaderWorkerSet support is enabled (CRD detected at startup)
 }
 
 // NewVariantAutoscalingReconciler creates a new VariantAutoscalingReconciler
@@ -70,16 +66,14 @@ func NewVariantAutoscalingReconciler(
 	cfg *config.Config,
 	ds datastore.Datastore,
 	lwsEnabled bool,
-	kedaEnabled bool,
 ) *VariantAutoscalingReconciler {
 	return &VariantAutoscalingReconciler{
-		Client:      client,
-		Scheme:      scheme,
-		Recorder:    recorder,
-		Config:      cfg,
-		Datastore:   ds,
-		lwsEnabled:  lwsEnabled,
-		kedaEnabled: kedaEnabled,
+		Client:     client,
+		Scheme:     scheme,
+		Recorder:   recorder,
+		Config:     cfg,
+		Datastore:  ds,
+		lwsEnabled: lwsEnabled,
 	}
 }
 
@@ -106,11 +100,6 @@ func NewVariantAutoscalingReconciler(
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=inference.networking.x-k8s.io;inference.networking.k8s.io,resources=inferencepools,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=deployments/scale,verbs=get;update
-// Note: Kubernetes RBAC does not support annotation-based selectors, so these grants are
-// necessarily cluster-wide. Access is read-only (get;list;watch). The AnnotatedScalerPredicate
-// and per-namespace filtering (see TODO #1134) limit actual processing to managed objects.
-// +kubebuilder:rbac:groups=keda.sh,resources=scaledobjects,verbs=get;list;watch
-// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
 
 const (
 	// ServiceMonitor constants for watching controller's own metrics ServiceMonitor
@@ -383,18 +372,6 @@ func (r *VariantAutoscalingReconciler) handleLeaderWorkerSetEvent(ctx context.Co
 	}}
 }
 
-// handleAnnotatedScalerEvent tracks or untracks the namespace of an annotated ScaledObject or HPA.
-// It returns no reconcile requests — namespace tracking is the sole side-effect.
-// The engine's polling loop discovers these objects via List on every tick.
-func (r *VariantAutoscalingReconciler) handleAnnotatedScalerEvent(ctx context.Context, obj client.Object) []reconcile.Request {
-	if !obj.GetDeletionTimestamp().IsZero() || !annotations.IsManaged(obj) {
-		r.Datastore.NamespaceUntrack("AnnotatedScaler", obj.GetName(), obj.GetNamespace())
-	} else {
-		r.Datastore.NamespaceTrack("AnnotatedScaler", obj.GetName(), obj.GetNamespace())
-	}
-	return nil
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
@@ -415,13 +392,6 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			&appsv1.Deployment{},
 			handler.EnqueueRequestsFromMapFunc(r.handleDeploymentEvent),
 			builder.WithPredicates(ScaleTargetPredicate()),
-		).
-		// Watch annotated HPAs for namespace tracking (annotation-based discovery, Phase 1).
-		// HPAs are core Kubernetes objects, always available.
-		Watches(
-			&autoscalingv2.HorizontalPodAutoscaler{},
-			handler.EnqueueRequestsFromMapFunc(r.handleAnnotatedScalerEvent),
-			builder.WithPredicates(AnnotatedScalerPredicate()),
 		)
 
 	// Only watch LeaderWorkerSet if LWS support is enabled (CRD detected at startup)
@@ -430,15 +400,6 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			&lwsv1.LeaderWorkerSet{},
 			handler.EnqueueRequestsFromMapFunc(r.handleLeaderWorkerSetEvent),
 			builder.WithPredicates(ScaleTargetPredicate()),
-		)
-	}
-
-	// Only watch KEDA ScaledObjects if the KEDA CRD is installed (detected at startup)
-	if r.kedaEnabled {
-		controllerBuilder = controllerBuilder.Watches(
-			&kedav1alpha1.ScaledObject{},
-			handler.EnqueueRequestsFromMapFunc(r.handleAnnotatedScalerEvent),
-			builder.WithPredicates(AnnotatedScalerPredicate()),
 		)
 	}
 
