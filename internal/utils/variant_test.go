@@ -18,7 +18,7 @@ package utils
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 
 	kedav1alpha1 "github.com/kedacore/keda/v2/apis/keda/v1alpha1"
@@ -275,7 +275,7 @@ func TestAnnotationSourcedVariants(t *testing.T) {
 		cl := fake.NewClientBuilder().WithScheme(s).WithInterceptorFuncs(interceptor.Funcs{
 			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 				if _, ok := list.(*kedav1alpha1.ScaledObjectList); ok {
-					return fmt.Errorf("keda api unavailable")
+					return errors.New("keda api unavailable")
 				}
 				return c.List(ctx, list, opts...)
 			},
@@ -315,7 +315,7 @@ func TestReadyVariantAutoscalingsMergePath(t *testing.T) {
 		return &wvav1alpha1.VariantAutoscaling{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 			Spec: wvav1alpha1.VariantAutoscalingSpec{
-				ModelID: "model-crd",
+				ModelID:        "model-crd",
 				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{Kind: targetKind, Name: targetName},
 			},
 		}
@@ -325,7 +325,7 @@ func TestReadyVariantAutoscalingsMergePath(t *testing.T) {
 		s := variantTestScheme(t)
 		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
 			makeCRDVA("ns1", "va-crd", "Deployment", "deploy-crd"),
-			managedHPA("ns1", "hpa-ann", "Deployment", "deploy-ann", "model-ann"),
+			managedHPA("ns2", "hpa-ann", "Deployment", "deploy-ann", "model-ann"),
 		).Build()
 
 		result, err := readyVariantAutoscalings(ctx, cl)
@@ -364,7 +364,7 @@ func TestReadyVariantAutoscalingsMergePath(t *testing.T) {
 			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
 				// fail HPA listing to force annotationSourcedVariants to return an error
 				if _, ok := list.(*autoscalingv2.HorizontalPodAutoscalerList); ok {
-					return fmt.Errorf("hpa api unavailable")
+					return errors.New("hpa api unavailable")
 				}
 				return c.List(ctx, list, opts...)
 			},

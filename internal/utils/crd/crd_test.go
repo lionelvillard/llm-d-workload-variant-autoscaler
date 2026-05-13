@@ -1,7 +1,7 @@
 package crd
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -67,7 +67,7 @@ func TestCheckCRDInstalled(t *testing.T) {
 			apiLists: []*metav1.APIResourceList{
 				apiList("keda.sh/v1alpha1", "ScaledObject"),
 			},
-			err: fmt.Errorf("some api group unavailable"),
+			err: errors.New("some api group unavailable"),
 		}
 		if !checkCRDInstalled(disc, "keda.sh/v1alpha1", "ScaledObject", log) {
 			t.Error("want true when CRD is present despite partial error")
@@ -77,7 +77,7 @@ func TestCheckCRDInstalled(t *testing.T) {
 	t.Run("total failure — nil apiLists", func(t *testing.T) {
 		disc := &fakeDiscovery{
 			apiLists: nil,
-			err:      fmt.Errorf("discovery completely failed"),
+			err:      errors.New("discovery completely failed"),
 		}
 		if checkCRDInstalled(disc, "keda.sh/v1alpha1", "ScaledObject", log) {
 			t.Error("want false when discovery returns no results at all")
