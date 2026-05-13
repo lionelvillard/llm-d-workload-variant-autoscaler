@@ -75,8 +75,12 @@ func Parse(obj metav1.Object) (*Parsed, error) {
 	if cost == "" {
 		cost = defaultVariantCost
 	}
-	if _, err := strconv.ParseFloat(cost, 64); err != nil {
+	costVal, err := strconv.ParseFloat(cost, 64)
+	if err != nil {
 		return nil, fmt.Errorf("annotation %s must be a numeric string, got %q: %w", VariantCost, cost, err)
+	}
+	if costVal < 0 {
+		return nil, fmt.Errorf("annotation %q must be non-negative, got %v", VariantCost, costVal)
 	}
 	return &Parsed{
 		ModelID:     modelID,

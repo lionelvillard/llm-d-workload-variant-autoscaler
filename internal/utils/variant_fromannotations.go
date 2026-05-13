@@ -22,6 +22,7 @@ import (
 	kedav1alpha1 "github.com/kedacore/keda/v2/apis/keda/v1alpha1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	wvav1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/annotations"
@@ -103,8 +104,7 @@ func VariantAutoscalingFromHPA(hpa *autoscalingv2.HorizontalPodAutoscaler) (*wva
 		apiVersion = "apps/v1"
 	}
 
-	defaultMin := int32(1)
-	minReplicas := &defaultMin
+	minReplicas := ptr.To(int32(1))
 	if hpa.Spec.MinReplicas != nil {
 		minReplicas = hpa.Spec.MinReplicas
 	}

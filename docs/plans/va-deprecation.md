@@ -148,7 +148,8 @@ These overlays are the templates Phase 2 will promote to be the default and Phas
 
 - **Unit**: `internal/annotations/annotations_test.go` (parsing/defaulting/validation), `internal/utils/variant_fromannotations_test.go` (synthesis from fake ScaledObject/HPA).
 - **Integration**: extend `internal/controller/variantautoscaling_controller_test.go` with a case that creates only an annotated ScaledObject (no VA) and asserts the engine produces `wva_desired_replicas` with correct labels.
-- **E2E**: add one new test (e.g. `test/e2e/annotation_discovery_test.go`) mirroring `smoke_test.go` but driven by annotations and backed by the kustomize overlays from 1.7. Keep existing VA-based e2e tests green.
+- **E2E (new annotation path)**: add `test/e2e/annotation_discovery_test.go` mirroring `smoke_test.go` but driven by annotations and backed by the kustomize overlays from 1.7. Uses the existing `test/e2e/fixtures/hpa_builder.go` and `test/e2e/fixtures/scaled_object_builder.go` (with annotation helpers added) instead of `va_builder.go`. Keep existing VA-based e2e tests green.
+- **E2E (extend existing tests)**: update the existing e2e tests (`smoke_test.go`, `limiter_test.go`, `saturation_analyzer_path_test.go`, `scale_from_zero_test.go`) to exercise both VA-based and annotation-based (HPA / KEDA ScaledObject) setup paths for the same scenarios, so dual-mode is validated end-to-end across all test suites and not only in the new annotation-discovery test.
 
 ### 1.9 Documentation update
 

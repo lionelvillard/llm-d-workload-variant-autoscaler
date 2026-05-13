@@ -64,4 +64,4 @@ spec:
       threshold: '1'
       activationThreshold: '0'
       metricType: "Value"
-      unsafeSsl: "true"
+      unsafeSsl: "true"  # WARNING: set to "false" in production and provide a CA bundle via authenticationRef

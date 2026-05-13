@@ -215,15 +215,19 @@ func readyVariantAutoscalings(ctx context.Context, k8sClient client.Client) ([]w
 		return readyVAs, nil
 	}
 
-	// Build set of (namespace/scaleTargetRef.name) already covered by CRD-sourced VAs.
+	// Build set of (namespace/kind/name) already covered by CRD-sourced VAs.
+	// Kind is sufficient for disambiguation: the only in-play kinds are Deployment,
+	// LeaderWorkerSet, and StatefulSet, which are unique names in practice.
 	crdTargets := make(map[string]bool, len(readyVAs))
 	for _, va := range readyVAs {
 		if va.Spec.ScaleTargetRef.Name != "" {
-			crdTargets[GetNamespacedKey(va.Namespace, va.Spec.ScaleTargetRef.Name)] = true
+			key := fmt.Sprintf("%s/%s/%s", va.Namespace, va.Spec.ScaleTargetRef.Kind, va.Spec.ScaleTargetRef.Name)
+			crdTargets[key] = true
 		}
 	}
 	for _, va := range annotated {
-		if !crdTargets[GetNamespacedKey(va.Namespace, va.Spec.ScaleTargetRef.Name)] {
+		key := fmt.Sprintf("%s/%s/%s", va.Namespace, va.Spec.ScaleTargetRef.Kind, va.Spec.ScaleTargetRef.Name)
+		if !crdTargets[key] {
 			readyVAs = append(readyVAs, va)
 		}
 	}
@@ -237,12 +241,16 @@ func readyVariantAutoscalings(ctx context.Context, k8sClient client.Client) ([]w
 
 // annotationSourcedVariants lists HPAs and KEDA ScaledObjects bearing llm-d.ai/managed: "true"
 // and synthesizes in-memory VariantAutoscaling objects from them. ScaledObject discovery is
-// skipped gracefully when the KEDA CRD is not installed.
+// skipped gracefully when the KEDA CRD is not installed. When both an HPA and a ScaledObject
+// target the same scale target, the ScaledObject entry wins.
 func annotationSourcedVariants(ctx context.Context, k8sClient client.Client) ([]wvav1alpha1.VariantAutoscaling, error) {
 	logger := ctrl.LoggerFrom(ctx)
-	var result []wvav1alpha1.VariantAutoscaling
+	// keyed by namespace/kind/name for deduplication; ScaledObject entries overwrite HPA entries.
+	byTarget := make(map[string]wvav1alpha1.VariantAutoscaling)
 
-	// HPAs are a core Kubernetes type — always available.
+	// HPAs are a core Kubernetes type — always available (lower priority for deduplication).
+	// TODO(#1134): scope to tracked namespaces only (client.InNamespace per ds.ListTrackedNamespaces())
+	// to avoid iterating the full cluster cache on every engine tick.
 	var hpaList autoscalingv2.HorizontalPodAutoscalerList
 	if err := k8sClient.List(ctx, &hpaList); err != nil {
 		return nil, fmt.Errorf("listing HPAs: %w", err)
@@ -258,15 +266,23 @@ func annotationSourcedVariants(ctx context.Context, k8sClient client.Client) ([]
 				"namespace", hpa.Namespace, "name", hpa.Name, "error", err)
 			continue
 		}
-		result = append(result, *va)
+		key := fmt.Sprintf("%s/%s/%s", va.Namespace, va.Spec.ScaleTargetRef.Kind, va.Spec.ScaleTargetRef.Name)
+		byTarget[key] = *va
 	}
 
 	// KEDA ScaledObjects — may not be installed; handle gracefully.
+	// ScaledObject takes precedence over HPA for the same scale target.
+	// TODO(#1134): scope to tracked namespaces only (client.InNamespace per ds.ListTrackedNamespaces())
+	// to avoid iterating the full cluster cache on every engine tick.
 	var soList kedav1alpha1.ScaledObjectList
 	if err := k8sClient.List(ctx, &soList); err != nil {
 		if apimeta.IsNoMatchError(err) {
 			logger.V(logging.DEBUG).Info("KEDA ScaledObject CRD not available, skipping annotation discovery for ScaledObjects")
 		} else {
+			result := make([]wvav1alpha1.VariantAutoscaling, 0, len(byTarget))
+			for _, va := range byTarget {
+				result = append(result, va)
+			}
 			return result, fmt.Errorf("listing ScaledObjects: %w", err)
 		}
 	} else {
@@ -281,10 +297,15 @@ func annotationSourcedVariants(ctx context.Context, k8sClient client.Client) ([]
 					"namespace", so.Namespace, "name", so.Name, "error", err)
 				continue
 			}
-			result = append(result, *va)
+			key := fmt.Sprintf("%s/%s/%s", va.Namespace, va.Spec.ScaleTargetRef.Kind, va.Spec.ScaleTargetRef.Name)
+			byTarget[key] = *va
 		}
 	}
 
+	result := make([]wvav1alpha1.VariantAutoscaling, 0, len(byTarget))
+	for _, va := range byTarget {
+		result = append(result, va)
+	}
 	return result, nil
 }
 

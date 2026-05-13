@@ -106,6 +106,9 @@ func NewVariantAutoscalingReconciler(
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=inference.networking.x-k8s.io;inference.networking.k8s.io,resources=inferencepools,verbs=get;list;watch
 // +kubebuilder:rbac:groups=apps,resources=deployments/scale,verbs=get;update
+// Note: Kubernetes RBAC does not support annotation-based selectors, so these grants are
+// necessarily cluster-wide. Access is read-only (get;list;watch). The AnnotatedScalerPredicate
+// and per-namespace filtering (see TODO #1134) limit actual processing to managed objects.
 // +kubebuilder:rbac:groups=keda.sh,resources=scaledobjects,verbs=get;list;watch
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch
 
@@ -384,9 +387,9 @@ func (r *VariantAutoscalingReconciler) handleLeaderWorkerSetEvent(ctx context.Co
 // It returns no reconcile requests — namespace tracking is the sole side-effect.
 // The engine's polling loop discovers these objects via List on every tick.
 func (r *VariantAutoscalingReconciler) handleAnnotatedScalerEvent(ctx context.Context, obj client.Object) []reconcile.Request {
-	if !obj.GetDeletionTimestamp().IsZero() {
+	if !obj.GetDeletionTimestamp().IsZero() || !annotations.IsManaged(obj) {
 		r.Datastore.NamespaceUntrack("AnnotatedScaler", obj.GetName(), obj.GetNamespace())
-	} else if annotations.IsManaged(obj) {
+	} else {
 		r.Datastore.NamespaceTrack("AnnotatedScaler", obj.GetName(), obj.GetNamespace())
 	}
 	return nil
@@ -418,6 +421,7 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		Watches(
 			&autoscalingv2.HorizontalPodAutoscaler{},
 			handler.EnqueueRequestsFromMapFunc(r.handleAnnotatedScalerEvent),
+			builder.WithPredicates(AnnotatedScalerPredicate()),
 		)
 
 	// Only watch LeaderWorkerSet if LWS support is enabled (CRD detected at startup)
@@ -434,6 +438,7 @@ func (r *VariantAutoscalingReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		controllerBuilder = controllerBuilder.Watches(
 			&kedav1alpha1.ScaledObject{},
 			handler.EnqueueRequestsFromMapFunc(r.handleAnnotatedScalerEvent),
+			builder.WithPredicates(AnnotatedScalerPredicate()),
 		)
 	}
 

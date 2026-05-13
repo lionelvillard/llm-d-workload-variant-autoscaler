@@ -94,6 +94,11 @@ func TestParse(t *testing.T) {
 			wantModelID: "m",
 			wantCost:    "5",
 		},
+		{
+			name:    "negative cost rejected",
+			ann:     map[string]string{annotations.Managed: "true", annotations.ModelID: "m", annotations.VariantCost: "-5.0"},
+			wantErr: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
