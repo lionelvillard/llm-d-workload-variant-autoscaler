@@ -378,4 +378,30 @@ func TestReadyVariantAutoscalingsMergePath(t *testing.T) {
 			t.Errorf("want 1 CRD VA, got %d VAs", len(result))
 		}
 	})
+
+	t.Run("no CRD VA, annotated HPA, KEDA listing fails — HPA VA still returned", func(t *testing.T) {
+		// annotationSourcedVariants successfully lists the HPA but then fails listing
+		// ScaledObjects with a non-NoMatch error (e.g. transient API error).
+		// readyVariantAutoscalings logs the error as non-fatal and still merges the
+		// partial annotation results, so the HPA-sourced VA is returned.
+		s := variantTestScheme(t)
+		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
+			managedHPA("ns1", "hpa-ann", "deploy-ann", "model-ann"),
+		).WithInterceptorFuncs(interceptor.Funcs{
+			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+				if _, ok := list.(*kedav1alpha1.ScaledObjectList); ok {
+					return errors.New("keda api unavailable")
+				}
+				return c.List(ctx, list, opts...)
+			},
+		}).Build()
+
+		result, err := readyVariantAutoscalings(ctx, cl)
+		if err != nil {
+			t.Fatalf("expected non-fatal path, got error: %v", err)
+		}
+		if len(result) != 1 {
+			t.Errorf("want 1 VA (HPA-sourced, KEDA error is non-fatal), got %d", len(result))
+		}
+	})
 }

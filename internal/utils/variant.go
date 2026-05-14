@@ -208,8 +208,7 @@ func readyVariantAutoscalings(ctx context.Context, k8sClient client.Client) ([]w
 	annotated, err := annotationSourcedVariants(ctx, k8sClient)
 	if err != nil {
 		// Non-fatal: log and continue with CRD-sourced only.
-		logger.Error(err, "Failed to list annotation-sourced variants, continuing with CRD-sourced only")
-		return readyVAs, nil
+		logger.Error(err, "Error while listing annotation-sourced variants (non-fatal)")
 	}
 	if len(annotated) == 0 {
 		return readyVAs, nil
