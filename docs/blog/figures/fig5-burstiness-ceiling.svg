@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" font-family="system-ui, -apple-system, sans-serif" font-size="13">
+  <defs>
+    <style>
+      .axis { stroke: #1f2937; stroke-width: 1; fill: none; }
+      .grid { stroke: #e5e7eb; stroke-width: 1; fill: none; }
+      .alpha { stroke: #dc2626; stroke-width: 2.5; fill: none; stroke-linejoin: round; }
+      .ceiling { stroke: #b45309; stroke-width: 1.5; stroke-dasharray: 6 4; fill: none; }
+      .slo { stroke: #6b7280; stroke-width: 1.5; stroke-dasharray: 6 4; fill: none; }
+      .infeasible { fill: #dc26261a; stroke: none; }
+      .feasible { fill: #05966914; stroke: none; }
+      .label { fill: #1f2937; }
+      .muted { fill: #6b7280; font-size: 11px; }
+      .title { font-weight: 600; fill: #111827; font-size: 14px; }
+      .annot { fill: #6b7280; font-size: 12px; font-style: italic; }
+      .ceiling-label { fill: #b45309; font-size: 12px; font-weight: 600; }
+    </style>
+  </defs>
+
+  <text class="title" x="70" y="30">Burstiness ceiling: TTFT attainment vs traffic-growth rate</text>
+
+  <!-- shaded regions -->
+  <rect class="feasible" x="70" y="80" width="373" height="200"/>
+  <rect class="infeasible" x="443" y="80" width="327" height="200"/>
+
+  <!-- grid -->
+  <line class="grid" x1="70" y1="80" x2="770" y2="80"/>
+  <line class="grid" x1="70" y1="130" x2="770" y2="130"/>
+  <line class="grid" x1="70" y1="180" x2="770" y2="180"/>
+  <line class="grid" x1="70" y1="230" x2="770" y2="230"/>
+  <line class="grid" x1="70" y1="280" x2="770" y2="280"/>
+
+  <!-- y-axis labels (α) -->
+  <text class="muted" x="62" y="84" text-anchor="end">1.00</text>
+  <text class="muted" x="62" y="134" text-anchor="end">0.75</text>
+  <text class="muted" x="62" y="184" text-anchor="end">0.50</text>
+  <text class="muted" x="62" y="234" text-anchor="end">0.25</text>
+  <text class="muted" x="62" y="284" text-anchor="end">0</text>
+
+  <!-- x-axis tick labels (β in %/min) -->
+  <text class="muted" x="70" y="300" text-anchor="middle">0</text>
+  <text class="muted" x="303" y="300" text-anchor="middle">10</text>
+  <text class="muted" x="443" y="300" text-anchor="middle">16</text>
+  <text class="muted" x="536" y="300" text-anchor="middle">20</text>
+  <text class="muted" x="770" y="300" text-anchor="middle">30</text>
+
+  <line class="axis" x1="70" y1="50" x2="70" y2="280"/>
+  <line class="axis" x1="70" y1="280" x2="770" y2="280"/>
+
+  <text class="muted" x="20" y="180" text-anchor="middle" transform="rotate(-90 20 180)">SLO attainment α</text>
+  <text class="muted" x="420" y="320" text-anchor="middle">burstiness β  (% per minute)</text>
+
+  <!-- SLO target line at α = 0.95 -->
+  <line class="slo" x1="70" y1="90" x2="770" y2="90"/>
+  <text class="annot" x="76" y="86">target α = 0.95</text>
+
+  <!-- attainment curve: flat near 1.0 below ceiling, drops sharply above -->
+  <path class="alpha" d="M 70 80 L 303 80 L 397 82 Q 425 86 443 90 Q 470 130 490 155 Q 520 200 600 250 L 770 270"/>
+
+  <!-- ceiling vertical line at β_max = 16 -->
+  <line class="ceiling" x1="443" y1="60" x2="443" y2="280"/>
+  <text class="ceiling-label" x="443" y="55" text-anchor="middle">β_max = h / (T_cold + Δ) ≈ 16% / min</text>
+
+  <!-- region labels -->
+  <text class="annot" x="200" y="160" text-anchor="middle" fill="#059669">feasible — policy choices matter</text>
+  <text class="annot" x="200" y="178" text-anchor="middle" fill="#059669">(autoscaler can keep up)</text>
+
+  <text class="annot" x="600" y="160" text-anchor="middle" fill="#dc2626">infeasible at this configuration</text>
+  <text class="annot" x="600" y="178" text-anchor="middle" fill="#dc2626">(no policy meets SLO)</text>
+
+  <!-- config callout -->
+  <rect x="540" y="345" width="220" height="55" fill="#f9fafb" stroke="#d1d5db" stroke-width="1" rx="3"/>
+  <text class="muted" x="550" y="362" font-weight="600" fill="#111827">configuration assumed</text>
+  <text class="muted" x="550" y="377">headroom h = 0.20  (trigger at 0.80)</text>
+  <text class="muted" x="550" y="391">cold start T_cold = 60 s,  Δ = 15 s</text>
+
+  <text class="annot" x="60" y="362" text-anchor="start">every autoscaler — perfect, predictive,</text>
+  <text class="annot" x="60" y="378" text-anchor="start">or naive — lives on this curve at this</text>
+  <text class="annot" x="60" y="394" text-anchor="start">configuration. Tuning moves you along it,</text>
+  <text class="annot" x="60" y="410" text-anchor="start">never above it.</text>
+</svg>

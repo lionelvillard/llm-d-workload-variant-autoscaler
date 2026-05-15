@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" font-family="system-ui, -apple-system, sans-serif" font-size="13">
+  <defs>
+    <style>
+      .axis { stroke: #1f2937; stroke-width: 1; fill: none; }
+      .grid { stroke: #e5e7eb; stroke-width: 1; fill: none; }
+      .static { stroke: #ea580c; stroke-width: 2.5; stroke-dasharray: 8 4; fill: none; }
+      .ideal { stroke: #2563eb; stroke-width: 2; fill: none; stroke-linejoin: round; opacity: 0.55; stroke-dasharray: 4 3; }
+      .blocky { stroke: #0891b2; stroke-width: 2.5; fill: none; stroke-linejoin: miter; stroke-linecap: square; }
+      .savings { fill: #fbbf2433; stroke: none; }
+      .label { fill: #1f2937; }
+      .muted { fill: #6b7280; font-size: 11px; }
+      .title { font-weight: 600; fill: #111827; font-size: 14px; }
+      .annot { fill: #6b7280; font-size: 12px; font-style: italic; }
+    </style>
+  </defs>
+
+  <text class="title" x="70" y="30">Supply curves: flat baseline, blocky ideal, smooth reference</text>
+
+  <!-- grid -->
+  <line class="grid" x1="70" y1="80" x2="770" y2="80"/>
+  <line class="grid" x1="70" y1="140" x2="770" y2="140"/>
+  <line class="grid" x1="70" y1="200" x2="770" y2="200"/>
+  <line class="grid" x1="70" y1="260" x2="770" y2="260"/>
+
+  <text class="muted" x="62" y="84" text-anchor="end">20</text>
+  <text class="muted" x="62" y="144" text-anchor="end">15</text>
+  <text class="muted" x="62" y="204" text-anchor="end">10</text>
+  <text class="muted" x="62" y="264" text-anchor="end">5</text>
+  <text class="muted" x="62" y="304" text-anchor="end">0</text>
+
+  <line class="axis" x1="70" y1="50" x2="70" y2="300"/>
+  <line class="axis" x1="70" y1="300" x2="770" y2="300"/>
+
+  <text class="muted" x="20" y="180" text-anchor="middle" transform="rotate(-90 20 180)">replicas</text>
+
+  <!-- savings envelope: between static (top, y=80) and ideal curve -->
+  <!-- ideal curve approximates demand shape, scaled to replicas:
+       baseline ~ 3 replicas, ramp to 10, plateau at 10, burst to 20, decay -->
+  <path class="savings" d="M 70 80 L 770 80 L 770 290 L 720 280 Q 680 265 640 235 Q 605 200 580 180 L 537 200 L 537 200 L 303 200 Q 250 240 187 270 L 70 285 Z"/>
+
+  <!-- static line at N* = 20 (y=80) -->
+  <line class="static" x1="70" y1="80" x2="770" y2="80"/>
+
+  <!-- ideal supply curve N*(t) — continuous, idealized reference (dimmed) -->
+  <path class="ideal" d="M 70 285 Q 130 280 187 270 Q 245 240 303 200 L 537 200 Q 555 195 580 100 L 590 80 L 595 80 Q 605 80 630 130 Q 660 180 720 250 Q 745 270 770 282"/>
+
+  <!-- blocky ideal: discretized at the autoscaler decision interval (one step per reconcile tick) -->
+  <path class="blocky" d="M 70 278 H 187 V 267 H 210 V 256 H 233 V 234 H 257 V 212 H 280 V 201 H 303 V 190 H 537 V 157 H 548 V 113 H 560 V 91 H 572 V 80 H 583 V 91 H 595 V 124 H 607 V 157 H 630 V 190 H 653 V 212 H 677 V 234 H 700 V 245 H 723 V 267 H 747 V 278 H 770"/>
+
+  <!-- annotations -->
+  <text class="annot" x="765" y="74" text-anchor="end">flat: optimal-static N*</text>
+
+  <text class="annot" x="430" y="135" text-anchor="middle">savings envelope</text>
+  <text class="annot" x="430" y="150" text-anchor="middle">(everything an autoscaler can capture)</text>
+
+  <text class="annot" x="245" y="178" text-anchor="middle" fill="#0891b2">blocky ideal: one step per</text>
+  <text class="annot" x="245" y="193" text-anchor="middle" fill="#0891b2">decision tick (Δ = 15 s)</text>
+  <line x1="245" y1="200" x2="245" y2="244" stroke="#0891b2" stroke-width="1" fill="none" stroke-dasharray="3 3"/>
+
+  <text class="annot" x="135" y="320" text-anchor="start" opacity="0.7">smooth (idealized continuous) reference</text>
+  <line x1="180" y1="313" x2="190" y2="280" stroke="#2563eb" stroke-width="1" fill="none" opacity="0.5"/>
+
+  <!-- x labels -->
+  <text class="muted" x="420" y="380" text-anchor="middle">time (minutes)</text>
+  <text class="muted" x="70" y="343" text-anchor="middle">0</text>
+  <text class="muted" x="187" y="343" text-anchor="middle">5</text>
+  <text class="muted" x="303" y="343" text-anchor="middle">10</text>
+  <text class="muted" x="537" y="343" text-anchor="middle">20</text>
+  <text class="muted" x="770" y="343" text-anchor="middle">30</text>
+</svg>

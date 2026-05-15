@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 540" font-family="system-ui, -apple-system, sans-serif" font-size="13">
+  <defs>
+    <style>
+      .axis { stroke: #1f2937; stroke-width: 1; fill: none; }
+      .grid { stroke: #e5e7eb; stroke-width: 1; fill: none; }
+      .util { stroke: #7c3aed; stroke-width: 2.5; fill: none; stroke-linejoin: round; }
+      .ttft { stroke: #dc2626; stroke-width: 2.5; fill: none; stroke-linejoin: round; }
+      .threshold { stroke: #6b7280; stroke-width: 1.5; stroke-dasharray: 6 4; fill: none; }
+      .lead { fill: #fbbf2466; stroke: #d97706; stroke-width: 1; stroke-dasharray: 3 3; }
+      .label { fill: #1f2937; }
+      .muted { fill: #6b7280; font-size: 11px; }
+      .title { font-weight: 600; fill: #111827; font-size: 14px; }
+      .annot { fill: #6b7280; font-size: 11px; font-style: italic; }
+      .lead-label { fill: #b45309; font-size: 12px; font-weight: 600; }
+    </style>
+  </defs>
+
+  <!-- Top panel: KV utilization -->
+  <text class="title" x="70" y="30">KV-cache utilization (the price signal)</text>
+
+  <line class="grid" x1="70" y1="60" x2="770" y2="60"/>
+  <line class="grid" x1="70" y1="110" x2="770" y2="110"/>
+  <line class="grid" x1="70" y1="160" x2="770" y2="160"/>
+  <line class="grid" x1="70" y1="210" x2="770" y2="210"/>
+
+  <text class="muted" x="62" y="64" text-anchor="end">1.0</text>
+  <text class="muted" x="62" y="114" text-anchor="end">0.75</text>
+  <text class="muted" x="62" y="164" text-anchor="end">0.5</text>
+  <text class="muted" x="62" y="214" text-anchor="end">0.25</text>
+
+  <line class="axis" x1="70" y1="50" x2="70" y2="220"/>
+  <line class="axis" x1="70" y1="220" x2="770" y2="220"/>
+
+  <!-- threshold line at 0.80 (y=70) -->
+  <line class="threshold" x1="70" y1="100" x2="770" y2="100"/>
+  <text class="annot" x="765" y="94" text-anchor="end">scale-up trigger: 0.80</text>
+
+  <!-- u(t) curve: low baseline, climbs through ramp, plateau just below threshold, crosses during burst, returns -->
+  <path class="util" d="M 70 195 Q 130 192 187 188 Q 245 165 303 128 L 460 128 Q 510 125 540 105 L 555 95 L 575 70 L 590 65 Q 605 75 625 110 Q 660 140 720 175 L 770 195"/>
+
+  <!-- vertical line where u(t) crosses 0.80 (~x=545) -->
+  <line x1="545" y1="100" x2="545" y2="380" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3"/>
+
+  <!-- Bottom panel: TTFT -->
+  <text class="title" x="70" y="280">TTFT (the lagging indicator)</text>
+
+  <line class="grid" x1="70" y1="310" x2="770" y2="310"/>
+  <line class="grid" x1="70" y1="360" x2="770" y2="360"/>
+  <line class="grid" x1="70" y1="410" x2="770" y2="410"/>
+  <line class="grid" x1="70" y1="460" x2="770" y2="460"/>
+
+  <text class="muted" x="62" y="314" text-anchor="end">800ms</text>
+  <text class="muted" x="62" y="364" text-anchor="end">600ms</text>
+  <text class="muted" x="62" y="414" text-anchor="end">400ms</text>
+  <text class="muted" x="62" y="464" text-anchor="end">200ms</text>
+
+  <line class="axis" x1="70" y1="300" x2="70" y2="475"/>
+  <line class="axis" x1="70" y1="475" x2="770" y2="475"/>
+
+  <!-- SLO line at 500ms (y=385) -->
+  <line class="threshold" x1="70" y1="385" x2="770" y2="385"/>
+  <text class="annot" x="765" y="379" text-anchor="end">SLO: 500 ms</text>
+
+  <!-- TTFT curve: low, climbs after u(t) climbs, crosses SLO later -->
+  <path class="ttft" d="M 70 462 Q 130 460 187 458 Q 245 450 303 442 L 530 432 Q 555 425 580 400 L 590 388 L 600 384 Q 615 388 640 425 Q 680 450 770 465"/>
+
+  <!-- vertical line where TTFT crosses 500ms (~x=585) -->
+  <line x1="585" y1="385" x2="585" y2="60" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3"/>
+
+  <!-- lead-time band -->
+  <rect class="lead" x="545" y="230" width="40" height="40" rx="2"/>
+  <text class="lead-label" x="565" y="255" text-anchor="middle">decision</text>
+  <text class="lead-label" x="565" y="268" text-anchor="middle">budget</text>
+
+  <!-- arrows in lead band -->
+  <path d="M 547 245 L 583 245" stroke="#b45309" stroke-width="1.5" fill="none" marker-start="url(#larr)" marker-end="url(#rarr)"/>
+
+  <defs>
+    <marker id="larr" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 10 0 L 0 5 L 10 10 z" fill="#b45309"/>
+    </marker>
+    <marker id="rarr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+
+  <!-- x labels -->
+  <text class="muted" x="420" y="510" text-anchor="middle">time (minutes)</text>
+  <text class="muted" x="70" y="495" text-anchor="middle">0</text>
+  <text class="muted" x="187" y="495" text-anchor="middle">5</text>
+  <text class="muted" x="303" y="495" text-anchor="middle">10</text>
+  <text class="muted" x="537" y="495" text-anchor="middle">20</text>
+  <text class="muted" x="770" y="495" text-anchor="middle">30</text>
+</svg>
