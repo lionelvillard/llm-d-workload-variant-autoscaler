@@ -1,0 +1,87 @@
+# Per-model recording rules for ibm/granite-13b in namespace production.
+#
+# Emits three "replicas needed" signals (predictive from gateway arrival rate,
+# reactive queue backstop, reactive KV-cache backstop), then aggregates with
+# max() into wva:desired_replicas{model_name, namespace} — the single metric
+# the generic ScaledObject template consumes.
+#
+# Constants baked in for this model:
+#   SERVICE_RATE_PER_POD = 10 req/s   (μ·U at U_target=0.7)
+#   LEAD_TIME_SECONDS    = 90         (warm path: image cached, weights on local NVMe)
+#   QUEUE_PER_POD_MAX    = 5          (TTFT SLO 1s, ~200ms service time)
+#   KV_TARGET            = 0.80
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: granite-13b-desired-replicas
+  namespace: production
+  labels:
+    app: granite-13b
+spec:
+  groups:
+  - name: granite-13b-desired-replicas
+    interval: 15s
+    rules:
+    # Predictive: forecast λ 90s ahead, divide by per-pod capacity.
+    # predict_linear fits a line over the last 5m (sampled at 15s) and
+    # extrapolates 90s into the future. clamp_min floors negative extrapolation.
+    - record: wva:desired_replicas_by_signal
+      labels:
+        signal: predicted
+        model_name: ibm/granite-13b
+        namespace: production
+      expr: |
+        clamp_min(
+          predict_linear(
+            sum(
+              rate(inference_extension_scheduler_attempts_total{
+                target_model_name="ibm/granite-13b",
+                namespace="production"
+              }[2m])
+            )[5m:15s],
+            90
+          ) / 10,
+          0
+        )
+
+    # Reactive queue backstop: sum of per-pod waiting queues / per-pod tolerance.
+    # Only binds when the forecast under-predicts (short bursts, sudden context
+    # spikes inflating service time).
+    - record: wva:desired_replicas_by_signal
+      labels:
+        signal: queue
+        model_name: ibm/granite-13b
+        namespace: production
+      expr: |
+        sum(
+          max_over_time(vllm:num_requests_waiting{
+            model_name="ibm/granite-13b",
+            namespace="production"
+          }[1m])
+        ) / 5
+
+    # Reactive KV backstop: sum(kv_pct) / kv_target ≈ replicas' worth of KV
+    # load. Catches long-context mixes that QPS alone under-weights.
+    - record: wva:desired_replicas_by_signal
+      labels:
+        signal: kv
+        model_name: ibm/granite-13b
+        namespace: production
+      expr: |
+        sum(
+          max_over_time(vllm:kv_cache_usage_perc{
+            model_name="ibm/granite-13b",
+            namespace="production"
+          }[1m])
+        ) / 0.80
+
+    # Aggregate: drop the signal discriminator, take max across signals.
+    # Result carries {model_name, namespace} — what the ScaledObject queries.
+    - record: wva:desired_replicas
+      expr: |
+        max without (signal) (
+          wva:desired_replicas_by_signal{
+            model_name="ibm/granite-13b",
+            namespace="production"
+          }
+        )

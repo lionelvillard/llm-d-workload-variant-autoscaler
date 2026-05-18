@@ -1,0 +1,35 @@
+# Overlay for ibm/granite-13b in namespace production.
+# All tunables live in prometheusrule.yaml; this file only identifies the
+# model and sets replica bounds.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../base
+- prometheusrule.yaml
+namespace: production
+patches:
+- target:
+    kind: ScaledObject
+    name: PLACEHOLDER-predictive-scaler
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: granite-13b-predictive-scaler
+    - op: replace
+      path: /metadata/namespace
+      value: production
+    - op: replace
+      path: /metadata/labels/app
+      value: granite-13b
+    - op: replace
+      path: /spec/scaleTargetRef/name
+      value: granite-13b
+    - op: replace
+      path: /spec/maxReplicaCount
+      value: 8
+    - op: replace
+      path: /spec/advanced/horizontalPodAutoscalerConfig/name
+      value: keda-predictive-granite-13b
+    - op: replace
+      path: /spec/triggers/0/metadata/query
+      value: wva:desired_replicas{model_name="ibm/granite-13b", namespace="production"}

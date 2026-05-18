@@ -1,0 +1,75 @@
+# Per-model recording rules for meta/llama-3.1-70b in namespace llm-inference.
+#
+# Constants baked in for this model:
+#   SERVICE_RATE_PER_POD = 3 req/s    (μ·U at U_target=0.6 — tighter headroom
+#                                       given high per-request cost)
+#   LEAD_TIME_SECONDS    = 300        (cold path dominates: 70B weights load
+#                                       from remote storage, plus possible
+#                                       cluster-autoscaler node provisioning)
+#   QUEUE_PER_POD_MAX    = 3          (TTFT SLO 2s, ~500ms service time)
+#   KV_TARGET            = 0.75       (extra preemption headroom at long ctx)
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: llama-3-70b-desired-replicas
+  namespace: llm-inference
+  labels:
+    app: llama-3-70b
+spec:
+  groups:
+  - name: llama-3-70b-desired-replicas
+    interval: 15s
+    rules:
+    - record: wva:desired_replicas_by_signal
+      labels:
+        signal: predicted
+        model_name: meta/llama-3.1-70b
+        namespace: llm-inference
+      expr: |
+        clamp_min(
+          predict_linear(
+            sum(
+              rate(inference_extension_scheduler_attempts_total{
+                target_model_name="meta/llama-3.1-70b",
+                namespace="llm-inference"
+              }[2m])
+            )[5m:15s],
+            300
+          ) / 3,
+          0
+        )
+
+    - record: wva:desired_replicas_by_signal
+      labels:
+        signal: queue
+        model_name: meta/llama-3.1-70b
+        namespace: llm-inference
+      expr: |
+        sum(
+          max_over_time(vllm:num_requests_waiting{
+            model_name="meta/llama-3.1-70b",
+            namespace="llm-inference"
+          }[1m])
+        ) / 3
+
+    - record: wva:desired_replicas_by_signal
+      labels:
+        signal: kv
+        model_name: meta/llama-3.1-70b
+        namespace: llm-inference
+      expr: |
+        sum(
+          max_over_time(vllm:kv_cache_usage_perc{
+            model_name="meta/llama-3.1-70b",
+            namespace="llm-inference"
+          }[1m])
+        ) / 0.75
+
+    - record: wva:desired_replicas
+      expr: |
+        max without (signal) (
+          wva:desired_replicas_by_signal{
+            model_name="meta/llama-3.1-70b",
+            namespace="llm-inference"
+          }
+        )

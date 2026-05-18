@@ -1,0 +1,67 @@
+# KEDA ScaledObject template for predictive vLLM autoscaling.
+#
+# Model-agnostic. All tunables (μ·U, lead-time, queue-per-pod, KV target) and
+# the forecast/backstop math live in a per-overlay PrometheusRule that emits
+# `wva:desired_replicas{model_name, namespace}`. This template's only job is
+# to point KEDA at that single metric for a specific (model_name, namespace).
+#
+# Overlay must patch:
+#   metadata.name                                    — unique per model
+#   metadata.namespace                               — workload namespace
+#   metadata.labels.app                              — workload label
+#   spec.scaleTargetRef.name                         — deployment name
+#   spec.min/maxReplicaCount                         — per-model bounds
+#   spec.advanced.horizontalPodAutoscalerConfig.name — per-model HPA name
+#   spec.triggers[0].metadata.query                  — swap PLACEHOLDER labels
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: PLACEHOLDER-predictive-scaler
+  namespace: default
+  labels:
+    app: PLACEHOLDER
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: PLACEHOLDER
+  pollingInterval: 15
+  cooldownPeriod: 60
+  initialCooldownPeriod: 60
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  fallback:
+    failureThreshold: 3
+    replicas: 2
+    behavior: currentReplicasIfHigher
+  advanced:
+    restoreToOriginalReplicaCount: false
+    horizontalPodAutoscalerConfig:
+      name: keda-predictive-PLACEHOLDER
+      behavior:
+        # Scale up immediately — lead-time is already in the forecast.
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+          - type: Pods
+            value: 4
+            periodSeconds: 15
+        # Long scale-down window is the main cost lever: hold through short
+        # dips, shed only when demand has genuinely dropped.
+        scaleDown:
+          stabilizationWindowSeconds: 600
+          policies:
+          - type: Pods
+            value: 1
+            periodSeconds: 120
+  triggers:
+  - type: prometheus
+    name: desired
+    metricType: AverageValue
+    metadata:
+      serverAddress: http://prometheus.monitoring.svc.cluster.local:9090
+      threshold: "1"
+      activationThreshold: "0"
+      # Overlay replaces the label selector; the metric itself is produced
+      # by the overlay's PrometheusRule.
+      query: wva:desired_replicas{model_name="PLACEHOLDER", namespace="default"}
