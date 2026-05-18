@@ -18,7 +18,7 @@ The first is **incoming demand** — the rate of new prompt tokens arriving each
 
 The second is **KV-cache demand** — the total number of tokens that currently live in the cluster's KV cache, across every active request. This is a *stock* (a quantity, like water in a bathtub), not a *flow* (like the rate from the tap). It builds up as requests start and drains as they finish.
 
-These two curves don't move in lockstep. Prefill is fast — a request adds its prompt to KV cache almost instantly. Decode is slow — that same request can keep its slot occupied for tens of seconds while it streams output tokens. So when arrivals burst, KV demand keeps climbing for a while *after* the burst ends, and it drains slowly afterward. The KV curve is a lagged, smoothed shadow of the arrival curve.
+These two curves don't move in lockstep. Prefill is **batched up front**: when a request arrives, its prompt is loaded into KV cache in one forward pass (or a few chunked ones) — on the order of tens to hundreds of milliseconds for typical prompts, longer for long-context ones. Decode is a **stream**: each output token costs another forward pass, and the request keeps its KV-cache slot for the full request lifetime — seconds to tens of seconds. The asymmetry isn't that prefill is instant; it's that prefill *finishes* long before decode does. So when arrivals burst, KV demand keeps climbing for a while *after* the burst ends, and it drains slowly afterward. The KV curve is a lagged, smoothed shadow of the arrival curve.
 
 ![Two stacked panels: incoming prefill rate (top) and KV-cache demand stock (bottom). The bottom curve is a lagged, smoothed version of the top.](figures/fig1-demand.svg)
 
@@ -30,7 +30,7 @@ Each replica brings a fixed budget of KV-cache slots — call it *K*, set by GPU
 
 Supply has one nice property and two annoying ones. Nice: it's a single scalar you can move up and down by adjusting the replica count. Annoying: it can only move in chunky integer steps, and it doesn't move *fast* — adding a replica means starting a pod, loading model weights, and warming caches, which for an LLM-class model takes 30 seconds to two minutes. **Supply is sticky.** Almost every interesting autoscaling problem is a consequence of that stickiness.
 
-There's a third thing, easy to miss: supply doesn't move *continuously* either. Autoscalers run on a fixed reconcile loop — typically every 15 seconds — and the replica count is piecewise constant between decisions. So whatever the workload curve does under the hood, the supply curve is always a *staircase*, never a smooth ramp. This turns out to make the math nicer than you might expect, as we'll see in §7.
+There's a third thing, easy to miss: supply doesn't move *continuously* either. Autoscalers run on a fixed autoscaler loop — typically once every 15 seconds — and the replica count is piecewise constant between decisions. So whatever the workload curve does under the hood, the supply curve is always a *staircase*, never a smooth ramp. This turns out to make the math nicer than you might expect, as we'll see in §7.
 
 The relationship between the two sides is a single ratio: **utilization** = how much of the supplied KV cache is currently in use. Utilization at 0.3 means there's lots of headroom; utilization at 0.95 means the system is one bad arrival away from queuing requests and missing TTFT.
 
@@ -101,69 +101,69 @@ For readers who want to collapse all of this back to a single scalar, [DistServe
 
 ## 7. The formal version: turning the picture into numbers
 
-So far the argument has been in pictures. Here is the same picture written down — and because real autoscalers act on a fixed time grid (the reconcile loop, typically every $\Delta = 15$ seconds), the math is simpler than you might expect: integrals become sums, curves become sequences, and the only operations involved are sums, fractions, and one inequality.
+So far the argument has been in pictures. Here is the same picture written down — and because real autoscalers act in discrete steps (one decision per autoscaler-loop tick), the math is simpler than you might expect.
 
-Fix a trace of duration $T$, an SLO target $T_{\text{SLO}}$ on TTFT, and a decision interval $\Delta$. Divide the trace into $K = T / \Delta$ blocks of length $\Delta$. Within each block, the autoscaler holds one replica count fixed.
+Fix a trace, an SLO target $T_{\text{SLO}}$ on TTFT, and let $Ticks$ be the number of autoscaler-loop decisions across the trace. The autoscaler chooses one replica count per decision, giving a sequence $N_1, N_2, \ldots, N_{Ticks}$.
 
-**Cost** is the sum of replica counts across blocks:
+**Cost** is the sum of those replica counts:
 
-$$ C(N) = \Delta \sum_{k=1}^{K} N_k $$
+$$ Cost = \sum_{k=1}^{Ticks} N_k $$
 
-In words: cost equals the decision interval times the sum of how many replicas were running at each decision. Replica-seconds, written as a sum instead of an integral — same idea, but you can compute it by hand from a list.
+In words: just add up how many replicas were running at each decision. This is proportional to total replica-time — each $N_k$ is held for one loop interval, so multiplying through by that interval gives replica-seconds — but the proportionality constant cancels in everything that follows, so we drop it and work with the bare sum.
 
 **SLO attainment** is the fraction of requests that came in under the SLO:
 
-$$ \alpha(N) = \frac{\bigl|\{i : \tau_i \le T_{\text{SLO}}\}\bigr|}{|R|} $$
+$$ Attain = \frac{\bigl|\{i : TTFT_i \le T_{\text{SLO}}\}\bigr|}{|Reqs|} $$
 
-where $\tau_i$ is the TTFT for request $i$ during the replay, and $R$ is the set of all requests. Note that requests aren't on the decision grid — they happen whenever they happen. Only supply is discretized; demand is whatever the trace says.
+where $TTFT_i$ is the TTFT for request $i$ during the replay, and $Reqs$ is the set of all requests. Note that requests aren't on the decision grid — they happen whenever they happen. Only supply is discretized; demand is whatever the trace says.
 
 ### The two reference points
 
 Both come straight from the trace:
 
-- **Optimal-static cost** $C_{\text{static}} = N_{\text{static}} \cdot K \cdot \Delta = N_{\text{static}} \cdot T$, where $N_{\text{static}}$ is the smallest constant replica count whose attainment clears the target. The sum collapses because $N_k = N_{\text{static}}$ for every $k$.
-- **Ideal cost** $C^* = \Delta \sum_{k=1}^{K} N^*_k$, where $N^*_k$ is the smallest replica count that would have met SLO during block $k$ if the autoscaler could see the future and resize instantaneously at each tick.
+- **Optimal-static cost** $Cost_{\text{static}} = Ticks \cdot N_{\text{static}}$, where $N_{\text{static}}$ is the smallest constant replica count whose attainment clears the target. The sum collapses because $N_k = N_{\text{static}}$ for every $k$.
+- **Ideal cost** $Cost^* = \sum_{k=1}^{Ticks} N^*_k$, where $N^*_k$ is the smallest replica count that would have met SLO during decision $k$ if the autoscaler could see the future and resize instantaneously at each tick.
 
-By construction $C^* \le C_{\text{static}}$, and the gap $C_{\text{static}} - C^*$ is the savings envelope from §4 — turned into an actual number you can compute.
+By construction $Cost^* \le Cost_{\text{static}}$, and the gap $Cost_{\text{static}} - Cost^*$ is the savings envelope from §4 — turned into an actual number you can compute.
 
 ### Capture ratio: how much of the envelope you caught
 
 The natural single number for cost isn't raw replica-seconds; it's the fraction of the savings envelope the autoscaler actually captured:
 
-$$ \eta(A) = \frac{C_{\text{static}} - C(N_A)}{C_{\text{static}} - C^*} $$
+$$ Capture = \frac{Cost_{\text{static}} - Cost_A}{Cost_{\text{static}} - Cost^*} $$
 
 Read this as a number between 0 and 1:
 
-- $\eta = 1$ — the autoscaler matched the ideal staircase. Perfect tracking.
-- $\eta = 0$ — it cost the same as flat provisioning. Autoscaling did nothing.
-- $\eta < 0$ — it cost *more* than flat. Possible if the autoscaler over-reacts or churns; a useful metric should surface that, not hide it.
+- $Capture = 1$ — the autoscaler matched the ideal staircase. Perfect tracking.
+- $Capture = 0$ — it cost the same as flat provisioning. Autoscaling did nothing.
+- $Capture < 0$ — it cost *more* than flat. Possible if the autoscaler over-reacts or churns; a useful metric should surface that, not hide it.
 
-This rescales the cost axis so the interesting range — between "lazy baseline" and "unachievable best" — runs from 0 to 1, *for any trace*. Raw cost is interpretable but trace-dependent; cost-divided-by-ideal ($C(N)/C^*$) sounds clean but its lazy-baseline value drifts with how bursty the trace is, so you can't compare $\rho = 1.4$ across traces and know what it means. Capture ratio normalizes both endpoints, so 0.6 means the same thing on a flat trace as on a bursty one.
+This rescales the cost axis so the interesting range — between "lazy baseline" and "unachievable best" — runs from 0 to 1, *for any trace*. Raw cost is interpretable but trace-dependent; cost-divided-by-ideal ($Cost/Cost^*$) sounds clean but its lazy-baseline value drifts with how bursty the trace is, so you can't compare $ratio = 1.4$ across traces and know what it means. Capture ratio normalizes both endpoints, so 0.6 means the same thing on a flat trace as on a bursty one.
 
 ### The score is two numbers, not one
 
-Capture ratio $\eta$ and attainment $\alpha$ together tell the full story:
+Capture ratio $Capture$ and attainment $Attain$ together tell the full story:
 
-| $\eta$       | $\alpha$       | Verdict                                                |
+| $Capture$    | $Attain$       | Verdict                                                |
 | ------------ | -------------- | ------------------------------------------------------ |
 | $\approx 1$  | $\ge$ target   | Excellent — close to the unachievable bound            |
 | $> 0$        | $\ge$ target   | Better than flat, meeting SLO                          |
 | $> 0$        | $<$ target     | "Saving" by under-supplying — not a real win           |
 | $\le 0$      | any            | Flat provisioning would have been at least as good     |
 
-$\eta$ alone can be gamed by under-supplying; $\alpha$ alone can be gamed by over-supplying. Always report both.
+$Capture$ alone can be gamed by under-supplying; $Attain$ alone can be gamed by over-supplying. Always report both.
 
 ### Comparing two autoscalers
 
-A real autoscaler exposes tuning knobs $\theta$ — utilization threshold, scale-up cooldown, scale-down hysteresis. Sweep $\theta$ and you get a cloud of $(\eta, \alpha)$ points; take its upper-right Pareto frontier. The honest comparison between two autoscalers is between their **frontiers**, not between single points. Strategy $A$ dominates $B$ if $A$'s frontier sits at higher $\eta$ for every $\alpha$ — no SLO target exists where $B$ wins.
+A real autoscaler exposes tuning knobs $Params$ — utilization threshold, scale-up cooldown, scale-down hysteresis. Sweep $Params$ and you get a cloud of $(Capture, Attain)$ points; take its upper-right Pareto frontier. The honest comparison between two autoscalers is between their **frontiers**, not between single points. Strategy $A$ dominates $B$ if $A$'s frontier sits at higher $Capture$ for every $Attain$ — no SLO target exists where $B$ wins.
 
 ### Collapsing to one scalar
 
 If you really must report a single number, **goodput** is the principled choice:
 
-$$ G(N) = \frac{\bigl|\{i : \tau_i \le T_{\text{SLO}}\}\bigr|}{C(N)} $$
+$$ Goodput = \frac{\bigl|\{i : TTFT_i \le T_{\text{SLO}}\}\bigr|}{Cost} $$
 
-— SLO-meeting requests per replica-second. This is the version popularized by [DistServe][distserve]: throughput that actually met SLO, divided by what it cost. The numerator and denominator together encode both axes, so a single number can't be gamed the way $\eta$ or $\alpha$ alone can.
+— SLO-meeting requests per replica-second. This is the version popularized by [DistServe][distserve]: throughput that actually met SLO, divided by what it cost. The numerator and denominator together encode both axes, so a single number can't be gamed the way $Capture$ or $Attain$ alone can.
 
 Goodput is the right one-number summary *after* you've looked at the Pareto plot. Using it as your *starting* metric hides the trade-off the plot is teaching — which is why this section put it last.
 
@@ -173,80 +173,80 @@ Sections 4–7 talk about how *good* an autoscaler can be, capped from below by 
 
 ### Burstiness, defined
 
-Let demand grow at rate $r$ — say, KV-cache tokens added per second when the workload is climbing. Normalize by current supply $S$ to get a unit-free quantity:
+Let demand grow at rate $Rate$ — say, KV-cache tokens added per second when the workload is climbing. Normalize by current supply $Supply$ to get a unit-free quantity:
 
-$$ \beta = \frac{r}{S} $$
+$$ Burst = \frac{Rate}{Supply} $$
 
-The unit is *per second*. Reading it: "demand is growing by $\beta$ of supply, every second." Multiply by 60 to read it per minute, which is more intuitive ($\beta = 0.005$ per second $\approx$ 30% per minute).
+The unit is *per second*. Reading it: "demand is growing by $Burst$ of supply, every second." Multiply by 60 to read it per minute, which is more intuitive ($Burst = 0.005$ per second $\approx$ 30% per minute).
 
-$\beta$ is a property of the *workload measured against the cluster you're running*. Same trace, smaller cluster — bigger $\beta$.
+$Burst$ is a property of the *workload measured against the cluster you're running*. Same trace, smaller cluster — bigger $Burst$.
 
 ### The autoscaler's reaction time has three parts
 
 When utilization crosses the scale-up threshold, here's the timeline:
 
-- Up to $\Delta$ seconds elapse before the next reconcile tick fires (decision lag).
+- Up to $Lag$ seconds elapse before the next autoscaler-loop tick fires (decision lag).
 - The autoscaler issues a scale-up; a new pod begins starting.
 - $T_{\text{cold}}$ seconds later — typically 30 to 120 s for an LLM-class model — the pod has loaded weights, warmed caches, and started accepting requests.
 
 Total reaction time:
 
-$$ T_{\text{react}} = T_{\text{cold}} + \Delta $$
+$$ T_{\text{react}} = T_{\text{cold}} + Lag $$
 
-During those $T_{\text{react}}$ seconds, supply is fixed; demand keeps growing at $r$.
+During those $T_{\text{react}}$ seconds, supply is fixed; demand keeps growing at $Rate$.
 
 ### Headroom is your buffer
 
 Headroom is the gap between scale-up trigger and saturation:
 
-$$ h = 1 - u_{\text{threshold}} $$
+$$ Head = 1 - u_{\text{threshold}} $$
 
-If your trigger is at 0.80 utilization, $h = 0.20$. In absolute terms, the buffer at the moment scale-up fires is $h \cdot S$ tokens of unused KV cache.
+If your trigger is at 0.80 utilization, $Head = 0.20$. In absolute terms, the buffer at the moment scale-up fires is $Head \cdot Supply$ tokens of unused KV cache.
 
 For SLO to hold, the buffer must outlast the reaction time:
 
-$$ h \cdot S \;\ge\; r \cdot T_{\text{react}} $$
+$$ Head \cdot Supply \;\ge\; Rate \cdot T_{\text{react}} $$
 
-Divide both sides by $S$ to remove cluster size from the picture:
+Divide both sides by $Supply$ to remove cluster size from the picture:
 
-$$ h \;\ge\; \beta \cdot T_{\text{react}} $$
+$$ Head \;\ge\; Burst \cdot T_{\text{react}} $$
 
 Solving for the maximum tolerable burstiness gives the ceiling:
 
-$$ \boxed{\;\beta_{\max} = \frac{h}{T_{\text{cold}} + \Delta}\;} $$
+$$ \boxed{\;Burst_{\max} = \frac{Head}{T_{\text{cold}} + Lag}\;} $$
 
-Any workload growing faster than $\beta_{\max}$ overruns the buffer before the new replica arrives. Utilization hits 1.0 mid-reaction, the queue starts filling, and TTFT breaks. The autoscaler is doing the right thing — there just isn't enough buffer to do it in time.
+Any workload growing faster than $Burst_{\max}$ overruns the buffer before the new replica arrives. Utilization hits 1.0 mid-reaction, the queue starts filling, and TTFT breaks. The autoscaler is doing the right thing — there just isn't enough buffer to do it in time.
 
 ### A concrete number
 
 Plug in this project's defaults:
 
-- $h = 0.20$ (scale-up trigger at 0.80 utilization)
+- $Head = 0.20$ (scale-up trigger at 0.80 utilization)
 - $T_{\text{cold}} = 60$ s (LLM pod startup, conservative for a small model)
-- $\Delta = 15$ s (reconcile interval)
+- $Lag = 15$ s (autoscaler-loop interval)
 
-$$ \beta_{\max} = \frac{0.20}{60 + 15} \;\approx\; 0.0027\,/\text{s} \;\approx\; 16\% \text{ per minute} $$
+$$ Burst_{\max} = \frac{0.20}{60 + 15} \;\approx\; 0.0027\,/\text{s} \;\approx\; 16\% \text{ per minute} $$
 
 If your workload's traffic ever climbs faster than ~16% per minute, this configuration cannot meet SLO — not because the policy is bad, but because the buffer drains faster than the cold start.
 
-![Attainment α plotted against burstiness β. The curve sits flat near 1.0 below the ceiling, then drops sharply once β crosses β_max. The shaded region beyond is infeasible: every autoscaler — perfect, predictive, or naive — lives on this curve at the given (h, T_cold, Δ).](figures/fig5-burstiness-ceiling.svg)
+![Attainment Attain plotted against burstiness Burst. The curve sits flat near 1.0 below the ceiling, then drops sharply once Burst crosses Burst_max. The shaded region beyond is infeasible: every autoscaler — perfect, predictive, or naive — lives on this curve at the given (Head, T_cold, Lag).](figures/fig5-burstiness-ceiling.svg)
 
-The drop is sharp because the underlying dynamics are deterministic: below $\beta_{\max}$ the buffer covers the reaction; above it, it doesn't. Real traces aren't perfectly linear ramps — a brief spike that averages back down within $T_{\text{react}}$ can still be absorbed — so in practice the curve has a softer knee, but the asymptote is a hard wall.
+The drop is sharp because the underlying dynamics are deterministic: below $Burst_{\max}$ the buffer covers the reaction; above it, it doesn't. Real traces aren't perfectly linear ramps — a brief spike that averages back down within $T_{\text{react}}$ can still be absorbed — so in practice the curve has a softer knee, but the asymptote is a hard wall.
 
 ### Using the ceiling to evaluate a trace
 
 Two practical checks fall out:
 
-1. **Feasibility check.** From a trace, compute the worst sustained $\beta$ over any window of length $T_{\text{react}}$: take $D(t)$, find the steepest slope sustained over $T_{\text{react}}$ seconds, normalize by the supply present at that moment. If that exceeds $\beta_{\max}$, no autoscaler will pass — the trace is infeasible against your config, and a low SLO attainment $\alpha$ is *not* the autoscaler's fault.
-2. **Policy room.** If the trace's max $\beta$ sits well below $\beta_{\max}$, you have room to tune; capture ratio $\eta$ vs $\alpha$ from §7 is the right Pareto plot. If max $\beta$ sits *just* below $\beta_{\max}$, you're operating on the cliff edge — small workload changes will start producing SLO misses that no policy tweak can fix.
+1. **Feasibility check.** From a trace, compute the worst sustained $Burst$ over any window of length $T_{\text{react}}$: take $D(t)$, find the steepest slope sustained over $T_{\text{react}}$ seconds, normalize by the supply present at that moment. If that exceeds $Burst_{\max}$, no autoscaler will pass — the trace is infeasible against your config, and a low SLO attainment $Attain$ is *not* the autoscaler's fault.
+2. **Policy room.** If the trace's max $Burst$ sits well below $Burst_{\max}$, you have room to tune; capture ratio $Capture$ vs $Attain$ from §7 is the right Pareto plot. If max $Burst$ sits *just* below $Burst_{\max}$, you're operating on the cliff edge — small workload changes will start producing SLO misses that no policy tweak can fix.
 
 ### What the levers do
 
 Below the ceiling, autoscaler policy is the lever — capture ratio and attainment trade off as in §7. Above the ceiling, **the only fixes are architectural**:
 
-- **Lower $T_{\text{cold}}$.** Pre-pulled images, hot standbys, model-weight caching, smaller models. Every second off cold-start raises $\beta_{\max}$ proportionally — and cold-start is usually the dominant term in the denominator, so this lever is the biggest.
-- **More headroom.** Lower the threshold (0.80 → 0.60). Cheap to do, but capture ratio $\eta$ drops linearly with $h$ — you're trading cost for slack.
-- **Larger scale-up step.** Add $k$ replicas at once instead of 1. Effectively raises the next-supply level so the buffer at the *next* trigger is $k \cdot h \cdot S$. Useful for predictable surges; over-provisions for noise.
+- **Lower $T_{\text{cold}}$.** Pre-pulled images, hot standbys, model-weight caching, smaller models. Every second off cold-start raises $Burst_{\max}$ proportionally — and cold-start is usually the dominant term in the denominator, so this lever is the biggest.
+- **More headroom.** Lower the threshold (0.80 → 0.60). Cheap to do, but capture ratio $Capture$ drops linearly with $Head$ — you're trading cost for slack.
+- **Larger scale-up step.** Add $k$ replicas at once instead of 1. Effectively raises the next-supply level so the buffer at the *next* trigger is $k \cdot Head \cdot Supply$. Useful for predictable surges; over-provisions for noise.
 - **Predictive scaling.** Forecast and pre-scale before the threshold fires, effectively adding lookahead to $T_{\text{react}}$'s budget. Trades reaction-time cost for prediction error as a new failure mode.
 
 The first lever is structural. The others are trade-offs already on your Pareto frontier, just shifted. The right move depends on where your stack has the cheapest improvement margin — usually cold-start, sometimes headroom, rarely the policy itself.
