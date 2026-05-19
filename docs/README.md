@@ -31,14 +31,9 @@ Welcome to the WVA documentation! This directory contains comprehensive guides f
 - **[Debugging](developer-guide/debugging.md)** - Debugging techniques and tools
 - **[Contributing](../CONTRIBUTING.md)** - How to contribute to the project
 
-
 ### Benchmark Guide
 
 - **[Benchmark Guide](developer-guide/benchmark-guide.md)** - Running WVA scaling benchmarks
-
-## Update Notes
-
-- **[Changelog v0.5.0](CHANGELOG-v0.5.0.md)** - Release notes for v0.5.0
 
 ## Quick Links
 
