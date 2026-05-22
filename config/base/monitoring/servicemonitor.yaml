@@ -1,0 +1,24 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: controller-manager-service-monitor
+  labels:
+    control-plane: controller-manager
+    app.kubernetes.io/name: workload-variant-autoscaler
+spec:
+  endpoints:
+    - interval: 10s
+      path: /metrics
+      port: https
+      scheme: https
+      bearerTokenSecret:
+        name: controller-manager-token
+        key: token
+      tlsConfig:
+        # WVA metrics endpoint uses self-signed certificates, so Prometheus must skip verification
+        # This is separate from WVA->Prometheus TLS verification
+        insecureSkipVerify: true
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+      app.kubernetes.io/name: workload-variant-autoscaler

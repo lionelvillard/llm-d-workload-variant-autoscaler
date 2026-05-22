@@ -65,6 +65,17 @@ There are 3 main types of documentation targeting different audiences:
    - Best practices and common patterns
    - usually located under the `docs/user-guide/` directory (for example, in an end-user-focused subdirectory)
 
+## Kustomize / Config File Naming
+
+All files under `config/` follow the `(<app>-)?<kind>.yaml` pattern:
+
+- **`<kind>`** is the Kubernetes kind as a single lowercase word — no hyphens.
+  - `ConfigMap` → `configmap`, `ClusterRole` → `clusterrole`, `ClusterRoleBinding` → `clusterrolebinding`, `RoleBinding` → `rolebinding`, `ServiceAccount` → `serviceaccount`, `ServiceMonitor` → `servicemonitor`, `CustomResourceDefinition` → `customresourcedefinition`
+- **`<app>`** is an optional kebab-case prefix identifying the component or logical scope of the resource.
+- The app prefix comes **first**, the kind suffix comes **last**: e.g., `saturation-scaling-configmap.yaml`, `epp-metrics-serviceaccount.yaml`, `manager-clusterrole.yaml`.
+- `kustomization.yaml` and other kustomize-internal files are exempt.
+- File names use hyphens (`-`), never underscores.
+
 ## E2E Testing
 
 - use make targets for running e2e tests (e.g., `make test-e2e-smoke` or `make test-e2e-full`) and document the process in `docs/developer-guide/testing.md`
