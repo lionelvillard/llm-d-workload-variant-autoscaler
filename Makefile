@@ -53,7 +53,6 @@ BENCHMARK_MODEL_ID   ?= $(MODEL_ID)
 CREATE_CLUSTER    ?= false
 DELETE_CLUSTER    ?= false
 DELETE_NAMESPACES ?= false
-NAMESPACE_SCOPED  ?= false
 
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -98,8 +97,14 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
-	cp config/crd/bases/llmd.ai_variantautoscalings.yaml charts/workload-variant-autoscaler/crds/llmd.ai_variantautoscalings.yaml
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." \
+		output:crd:artifacts:config=config/base/crd \
+		output:rbac:artifacts:config=config/base/rbac
+	# controller-gen writes `<group>_<plural>.yaml` and `role.yaml`; rename to
+	# match the (<app>-)?<kind>.yaml convention used under config/.
+	mv config/base/crd/llmd.ai_variantautoscalings.yaml config/base/crd/variantautoscalings-customresourcedefinition.yaml
+	mv config/base/rbac/role.yaml config/base/rbac/manager-clusterrole.yaml
+	cp config/base/crd/variantautoscalings-customresourcedefinition.yaml charts/workload-variant-autoscaler/crds/llmd.ai_variantautoscalings.yaml
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -135,7 +140,7 @@ destroy-kind-cluster:
 .PHONY: deploy-wva-emulated-on-kind
 deploy-wva-emulated-on-kind: ## Deploy WVA + EPP on Kind (Prometheus Adapter as scaler backend)
 	@echo ">>> Deploying workload-variant-autoscaler (cluster args: $(KIND_ARGS), image: $(IMG))"
-	KIND=$(KIND) KUBECTL=$(KUBECTL) IMG=$(IMG) ENVIRONMENT=kind-emulator CREATE_CLUSTER=$(CREATE_CLUSTER) CLUSTER_GPU_TYPE=$(CLUSTER_GPU_TYPE) CLUSTER_NODES=$(CLUSTER_NODES) CLUSTER_GPUS=$(CLUSTER_GPUS) NAMESPACE_SCOPED=false SCALER_BACKEND=$(SCALER_BACKEND) \
+	KIND=$(KIND) KUBECTL=$(KUBECTL) IMG=$(IMG) ENVIRONMENT=kind-emulator CREATE_CLUSTER=$(CREATE_CLUSTER) CLUSTER_GPU_TYPE=$(CLUSTER_GPU_TYPE) CLUSTER_NODES=$(CLUSTER_NODES) CLUSTER_GPUS=$(CLUSTER_GPUS) SCALER_BACKEND=$(SCALER_BACKEND) \
 		deploy/install.sh
 	@ENVIRONMENT=kind-emulator \
 		LLM_D_RELEASE=$(LLM_D_RELEASE) \
@@ -220,7 +225,6 @@ deploy-e2e-infra: ## Deploy e2e test infrastructure (WVA + EPP; no model server 
 		echo "Using local image: $$IMAGE_REPO:$$IMAGE_TAG"; \
 		ENVIRONMENT=$(ENVIRONMENT) \
 		SCALER_BACKEND=$(SCALER_BACKEND) \
-		NAMESPACE_SCOPED=$(NAMESPACE_SCOPED) \
 		ENABLE_SCALE_TO_ZERO=$(SCALE_TO_ZERO_ENABLED) \
 		WVA_IMAGE_REPO=$$IMAGE_REPO \
 		WVA_IMAGE_TAG=$$IMAGE_TAG \
@@ -230,7 +234,6 @@ deploy-e2e-infra: ## Deploy e2e test infrastructure (WVA + EPP; no model server 
 		echo "IMG not set - using default image from registry (latest)"; \
 		ENVIRONMENT=$(ENVIRONMENT) \
 		SCALER_BACKEND=$(SCALER_BACKEND) \
-		NAMESPACE_SCOPED=$(NAMESPACE_SCOPED) \
 		ENABLE_SCALE_TO_ZERO=$(SCALE_TO_ZERO_ENABLED) \
 		./deploy/install.sh; \
 	fi

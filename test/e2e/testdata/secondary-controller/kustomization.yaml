@@ -8,7 +8,7 @@ kind: Kustomization
 #   - optional --controller-instance arg patch
 
 resources:
-- ../../../../config/default
+- ../../../../config/overlays/cluster-scoped
 
 patches:
 - target:

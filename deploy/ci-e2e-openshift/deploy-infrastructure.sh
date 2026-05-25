@@ -48,7 +48,7 @@ SKIP_CLUSTER_CRDS=true \
 ./deploy/install-epp.sh
 
 # Tune saturation thresholds for CI simulator mode.
-kubectl patch configmap workload-variant-autoscaler-saturation-scaling-config \
+kubectl patch configmap saturation-scaling-config \
   -n "$WVA_NAMESPACE" --type=merge \
   -p "$(printf '{"data":{"default":"kvSpareTrigger: %s\\nqueueSpareTrigger: %s\\n"}}' \
     "${KV_SPARE_TRIGGER}" "${QUEUE_SPARE_TRIGGER}")"

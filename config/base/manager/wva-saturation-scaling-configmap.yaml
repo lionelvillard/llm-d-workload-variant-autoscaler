@@ -8,7 +8,12 @@ kind: ConfigMap
 # - 'default' entry: Global default thresholds applied to all variants
 # - Override entries: Per-model/namespace custom thresholds (must include model_id and namespace)
 metadata:
-  name: saturation-scaling-config
+  name: wva-saturation-scaling-config
+  labels:
+    # Required: the controller cache filters ConfigMaps by this label in cluster-scoped mode
+    # (cmd/main.go). Without it, watch events are silently dropped and config changes
+    # are never picked up at runtime.
+    app.kubernetes.io/name: workload-variant-autoscaler
 data:
   # Global defaults applied to all variants unless overridden
   default: |

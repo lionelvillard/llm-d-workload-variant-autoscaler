@@ -36,10 +36,10 @@ spec:
         env:
           - name: LOG_LEVEL
             value: "info"
-          - name: SATURATION_CONFIG_MAP_NAME
-            value: saturation-scaling-config
           - name: PROMETHEUS_TOKEN_PATH
             value: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          - name: POOL_GROUP
+            value: "inference.networking.k8s.io"
           - name: POD_NAMESPACE
             valueFrom:
               fieldRef:

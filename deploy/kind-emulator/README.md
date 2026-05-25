@@ -170,7 +170,7 @@ GPUs are emulated using extended resources:
 
 ```bash
 kubectl port-forward -n workload-variant-autoscaler-system \
-  svc/workload-variant-autoscaler-controller-manager-metrics 8080:8080
+  svc/controller-manager-metrics-service 8080:8080
 ```
 
 **Port-forward Prometheus:**
@@ -253,7 +253,7 @@ make create-kind-cluster
 ```bash
 # Check controller logs
 kubectl logs -n workload-variant-autoscaler-system \
-  deployment/workload-variant-autoscaler-controller-manager
+  deployment/controller-manager
 
 # Verify CRDs installed
 kubectl get crd variantautoscalings.llmd.ai
@@ -318,7 +318,7 @@ WVA_IMAGE_PULL_POLICY=IfNotPresent make deploy-wva-emulated-on-kind CREATE_CLUST
 4. **Update deployment:**
 
    ```bash
-   kubectl set image deployment/workload-variant-autoscaler-controller-manager \
+   kubectl set image deployment/controller-manager \
      -n workload-variant-autoscaler-system \
      manager=localhost:5000/wva:dev
    ```
@@ -327,7 +327,7 @@ WVA_IMAGE_PULL_POLICY=IfNotPresent make deploy-wva-emulated-on-kind CREATE_CLUST
 
    ```bash
    kubectl logs -n workload-variant-autoscaler-system \
-     deployment/workload-variant-autoscaler-controller-manager -f
+     deployment/controller-manager -f
    ```
 
 ## Clean Up

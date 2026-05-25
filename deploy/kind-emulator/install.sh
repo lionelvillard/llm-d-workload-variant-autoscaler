@@ -33,8 +33,6 @@ WVA_NS=${WVA_NS:-"workload-variant-autoscaler-system"}
 WVA_RECONCILE_INTERVAL=${WVA_RECONCILE_INTERVAL:-"60s"} # WVA controller reconcile interval - tests set 30s interval
 SKIP_TLS_VERIFY=true  # Skip TLS verification in emulated environments
 WVA_LOG_LEVEL="debug" # WVA log level set to debug for emulated environments
-POOL_GROUP=${POOL_GROUP:-"inference.networking.k8s.io"}
-
 # Prometheus Configuration
 PROMETHEUS_SVC_NAME="kube-prometheus-stack-prometheus"
 PROMETHEUS_BASE_URL="https://$PROMETHEUS_SVC_NAME.$MONITORING_NAMESPACE.svc.cluster.local"

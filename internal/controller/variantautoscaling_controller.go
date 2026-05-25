@@ -103,7 +103,7 @@ func NewVariantAutoscalingReconciler(
 
 const (
 	// ServiceMonitor constants for watching controller's own metrics ServiceMonitor
-	defaultServiceMonitorName = "workload-variant-autoscaler-controller-manager-metrics-monitor"
+	defaultServiceMonitorName = "controller-manager-metrics-monitor"
 )
 
 var (

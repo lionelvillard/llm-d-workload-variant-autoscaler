@@ -228,7 +228,7 @@ See [Testing Guide](testing.md) and [E2E Test Suite README](../../test/e2e/READM
 
    ```bash
    kubectl logs -n workload-variant-autoscaler-system \
-     deployment/workload-variant-autoscaler-controller-manager -f
+     deployment/controller-manager -f
    ```
 
 ## Code Generation

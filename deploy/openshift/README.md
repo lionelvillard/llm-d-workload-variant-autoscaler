@@ -345,7 +345,7 @@ kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/llm-d-optimi
 
 ```bash
 kubectl logs -n workload-variant-autoscaler-system \
-  deployment/workload-variant-autoscaler-controller-manager \
+  deployment/controller-manager \
   -f
 ```
 

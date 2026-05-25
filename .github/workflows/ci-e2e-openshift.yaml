@@ -112,7 +112,7 @@ jobs:
             echo "has_code_changes=true" >> $GITHUB_OUTPUT
           fi
 
-  # Gate: Check permissions and handle /ok-to-test for fork PRs. 
+  # Gate: Check permissions and handle /ok-to-test for fork PRs.
   # - Maintainers (write access): Tests run automatically on pull_request.
   # - Fork PRs: Gate succeeds (no failure) so the PR does not show a false red check; E2E runs
   #   only after a maintainer comments /ok-to-test. Branch protection should require the
@@ -487,7 +487,6 @@ jobs:
           # HF_TOKEN is inherited from GITHUB_ENV (set in 'Get HF token from cluster secret' step)
           ENVIRONMENT: openshift
           SCALER_BACKEND: keda
-          NAMESPACE_SCOPED: "false"
           LLMD_NS: ${{ env.LLMD_NAMESPACE }}
           WVA_NS: ${{ env.WVA_NAMESPACE }}
           CONTROLLER_INSTANCE: ${{ env.WVA_NAMESPACE }}

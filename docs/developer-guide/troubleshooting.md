@@ -40,7 +40,7 @@
 
    Extract the Bearer token from the EPP metrics reader secret:
    ```bash
-   TOKEN=$(kubectl -n workload-variant-autoscaler-system get secret workload-variant-autoscaler-epp-metrics-token -o jsonpath='{.data.token}' | base64 --decode)
+   TOKEN=$(kubectl -n workload-variant-autoscaler-system get secret epp-metrics-token -o jsonpath='{.data.token}' | base64 --decode)
    ```
 
    Port-forward the EPP metrics service to localhost:9090:
@@ -78,7 +78,7 @@ For e2e-style deploys, **`deploy/install-epp.sh`** enables EPP flow control when
    apiVersion: apps/v1
    kind: Deployment
    metadata:
-      name: workload-variant-autoscaler-controller
+      name: controller-manager
       namespace: workload-variant-autoscaler-system
    spec:
       template:

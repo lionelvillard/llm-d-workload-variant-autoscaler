@@ -362,6 +362,12 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		})
 	})
 
+	// TODO: run dual-controller isolation in a dedicated fresh cluster rather than layering
+	// a namespace-scoped secondary controller on top of an existing cluster-scoped primary.
+	// The two modes are mutually exclusive by design: cluster-scoped ClusterRoleBindings
+	// (metrics-auth-rolebinding, manager-rolebinding, epp-metrics-reader-role-binding) are
+	// shared resources and get overwritten by each kustomize apply, requiring fragile
+	// patch-and-restore workarounds. A proper fix is a separate Kind cluster per scenario.
 	Context("Dual namespace-scoped controllers isolation", Serial, Ordered, func() {
 		var (
 			primaryNamespace    = "llm-d-sim"
@@ -393,7 +399,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			}
 
 			By("Installing secondary namespace-scoped controller via Kustomize")
-			primaryController, err := k8sClient.AppsV1().Deployments(cfg.WVANamespace).Get(ctx, "workload-variant-autoscaler-controller-manager", metav1.GetOptions{})
+			primaryController, err := k8sClient.AppsV1().Deployments(cfg.WVANamespace).Get(ctx, "controller-manager", metav1.GetOptions{})
 			Expect(err).NotTo(HaveOccurred(), "Failed to read primary controller deployment image")
 			Expect(primaryController.Spec.Template.Spec.Containers).NotTo(BeEmpty(), "Primary controller deployment should contain containers")
 			imageRepo, imageTag := splitImage(primaryController.Spec.Template.Spec.Containers[0].Image)
@@ -403,12 +409,12 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			_, statErr := os.Stat(overlayPath)
 			Expect(statErr).NotTo(HaveOccurred(), "Invalid %s path: %s", secondaryControllerOverlayPathEnv, overlayPath)
 
-			// Read the post-transform base image name from config/manager/kustomization.yaml.
+			// Read the post-transform base image name from config/base/manager/kustomization.yaml.
 			// The base overlay transforms "controller" → the published image name; our temp
 			// overlay must match that post-transform name to override it with the local image.
-			managerKustomizationPath := filepath.Join(overlayPath, "../../../../config/manager/kustomization.yaml")
+			managerKustomizationPath := filepath.Join(overlayPath, "../../../../config/base/manager/kustomization.yaml")
 			managerContent, managerReadErr := os.ReadFile(managerKustomizationPath)
-			Expect(managerReadErr).NotTo(HaveOccurred(), "Failed to read config/manager/kustomization.yaml")
+			Expect(managerReadErr).NotTo(HaveOccurred(), "Failed to read config/base/manager/kustomization.yaml")
 			var baseImageName string
 			for _, line := range strings.Split(string(managerContent), "\n") {
 				trimmed := strings.TrimSpace(line)
@@ -417,7 +423,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 					break
 				}
 			}
-			Expect(baseImageName).NotTo(BeEmpty(), "Failed to extract base image name from config/manager/kustomization.yaml")
+			Expect(baseImageName).NotTo(BeEmpty(), "Failed to extract base image name from config/base/manager/kustomization.yaml")
 
 			tmpOverlay, tmpErr := os.MkdirTemp("", "wva-secondary-overlay-*")
 			Expect(tmpErr).NotTo(HaveOccurred(), "Failed to create temp overlay dir")
@@ -450,13 +456,13 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			out, err := cmd.CombinedOutput()
 			Expect(err).NotTo(HaveOccurred(), "Secondary controller kustomize install failed: %s", string(out))
 
-			// The secondary overlay shares the same kustomize namePrefix as the primary, so
+			// The secondary overlay shares the same kustomize resource names as the primary, so
 			// kubectl apply overwrites the shared ClusterRoleBinding to point at the secondary
 			// namespace.
 			//   1. Restoring the primary's ClusterRoleBinding subject namespace.
 			//   2. Creating a dedicated binding for the secondary SA.
-			const crbName = "workload-variant-autoscaler-manager-rolebinding"
-			const crbNameSecondary = crbName + "-secondary"
+			const crbName = "manager-rolebinding"
+			const crbNameSecondary = "workload-variant-autoscaler-" + crbName + "-secondary"
 			restoreOut, restoreErr := exec.Command("kubectl", "patch", "clusterrolebinding", crbName,
 				"--type=json",
 				"-p", `[{"op":"replace","path":"/subjects/0/namespace","value":"`+cfg.WVANamespace+`"}]`,
@@ -464,15 +470,15 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			Expect(restoreErr).NotTo(HaveOccurred(), "Failed to restore primary ClusterRoleBinding: %s", string(restoreOut))
 
 			createOut, createErr := exec.Command("kubectl", "create", "clusterrolebinding", crbNameSecondary,
-				"--clusterrole=workload-variant-autoscaler-manager-role",
-				"--serviceaccount="+secondaryController+":workload-variant-autoscaler-controller-manager",
+				"--clusterrole=manager-role",
+				"--serviceaccount="+secondaryController+":controller-manager",
 			).CombinedOutput()
 			Expect(createErr).NotTo(HaveOccurred(), "Failed to create secondary ClusterRoleBinding: %s", string(createOut))
 
 			// The epp-metrics-reader ClusterRoleBinding is also cluster-scoped and gets overwritten
 			// by the secondary overlay — restore the primary subject and create a secondary binding.
-			const eppCRBName = "workload-variant-autoscaler-epp-metrics-reader-role-binding"
-			const eppCRBNameSecondary = eppCRBName + "-secondary"
+			const eppCRBName = "epp-metrics-reader-role-binding"
+			const eppCRBNameSecondary = "workload-variant-autoscaler-" + eppCRBName + "-secondary"
 			eppRestoreOut, eppRestoreErr := exec.Command("kubectl", "patch", "clusterrolebinding", eppCRBName,
 				"--type=json",
 				"-p", `[{"op":"replace","path":"/subjects/0/namespace","value":"`+cfg.WVANamespace+`"}]`,
@@ -480,14 +486,31 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			Expect(eppRestoreErr).NotTo(HaveOccurred(), "Failed to restore primary epp-metrics ClusterRoleBinding: %s", string(eppRestoreOut))
 
 			eppCreateOut, eppCreateErr := exec.Command("kubectl", "create", "clusterrolebinding", eppCRBNameSecondary,
-				"--clusterrole=workload-variant-autoscaler-epp-metrics-reader-role",
-				"--serviceaccount="+secondaryController+":workload-variant-autoscaler-epp-metrics-reader",
+				"--clusterrole=epp-metrics-reader-role",
+				"--serviceaccount="+secondaryController+":epp-metrics-reader",
 			).CombinedOutput()
 			Expect(eppCreateErr).NotTo(HaveOccurred(), "Failed to create secondary epp-metrics ClusterRoleBinding: %s", string(eppCreateOut))
+
+			// metrics-auth-rolebinding is also cluster-scoped and gets overwritten by the secondary
+			// overlay — restore the primary subject and create a per-deployment secondary binding.
+			const metricsAuthCRBName = "metrics-auth-rolebinding"
+			const metricsAuthCRBNameSecondary = "workload-variant-autoscaler-" + metricsAuthCRBName + "-secondary"
+			metricsAuthRestoreOut, metricsAuthRestoreErr := exec.Command("kubectl", "patch", "clusterrolebinding", metricsAuthCRBName,
+				"--type=json",
+				"-p", `[{"op":"replace","path":"/subjects/0/namespace","value":"`+cfg.WVANamespace+`"}]`,
+			).CombinedOutput()
+			Expect(metricsAuthRestoreErr).NotTo(HaveOccurred(), "Failed to restore primary metrics-auth ClusterRoleBinding: %s", string(metricsAuthRestoreOut))
+
+			metricsAuthCreateOut, metricsAuthCreateErr := exec.Command("kubectl", "create", "clusterrolebinding", metricsAuthCRBNameSecondary,
+				"--clusterrole=metrics-auth-role",
+				"--serviceaccount="+secondaryController+":controller-manager",
+			).CombinedOutput()
+			Expect(metricsAuthCreateErr).NotTo(HaveOccurred(), "Failed to create secondary metrics-auth ClusterRoleBinding: %s", string(metricsAuthCreateOut))
 
 			DeferCleanup(func() {
 				_ = exec.Command("kubectl", "delete", "clusterrolebinding", crbNameSecondary, "--ignore-not-found=true").Run()
 				_ = exec.Command("kubectl", "delete", "clusterrolebinding", eppCRBNameSecondary, "--ignore-not-found=true").Run()
+				_ = exec.Command("kubectl", "delete", "clusterrolebinding", metricsAuthCRBNameSecondary, "--ignore-not-found=true").Run()
 				// Delete the secondary controller namespace (cascades to all namespace-scoped
 				// resources). Do NOT use kubectl delete -k here — it would delete the shared
 				// ClusterRoles/ClusterRoleBindings that the primary controller depends on.

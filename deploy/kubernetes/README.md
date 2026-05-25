@@ -547,7 +547,7 @@ helm uninstall kube-prometheus-stack -n workload-variant-autoscaler-monitoring
 
 # Delete WVA
 cd /path/to/workload-variant-autoscaler
-kubectl delete -k config/default
+kubectl delete -k config/overlays/cluster-scoped
 
 # Delete namespaces
 kubectl delete namespace llm-d-optimized-baseline
@@ -641,7 +641,7 @@ make deploy-wva-on-k8s
 
 ```bash
 # Enable debug logging in WVA
-kubectl set env deployment/workload-variant-autoscaler-controller-manager \
+kubectl set env deployment/controller-manager \
   LOG_LEVEL=debug \
   -n workload-variant-autoscaler-system
 ```
@@ -660,13 +660,13 @@ make deploy-wva-on-k8s   # WVA + monitoring + scaler + LWS; llm-d is managed sep
 
 ```bash
 # Change how often WVA runs optimization (default: 60s)
-kubectl patch configmap workload-variant-autoscaler-variantautoscaling-config \
+kubectl patch configmap wva-variantautoscaling-config \
   -n workload-variant-autoscaler-system \
   --type merge \
   -p '{"data":{"GLOBAL_OPT_INTERVAL":"30s"}}'
 
 # Restart WVA to apply
-kubectl rollout restart deployment workload-variant-autoscaler-controller-manager \
+kubectl rollout restart deployment controller-manager \
   -n workload-variant-autoscaler-system
 ```
 

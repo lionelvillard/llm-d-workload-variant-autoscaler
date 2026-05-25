@@ -9,6 +9,20 @@
 
 GATEWAY_API_VERSION=${GATEWAY_API_VERSION:-"v1.2.0"}
 
+# Install Gateway API and GAIE CRDs.
+# Called from deploy_wva_prerequisites before the WVA controller starts so its
+# InferencePool watches succeed on the first attempt. Also called inside deploy_epp
+# — idempotent, kubectl apply is a no-op when the CRDs are already present.
+install_inference_crds() {
+    log_info "Installing Gateway API CRDs (${GATEWAY_API_VERSION})..."
+    kubectl apply -f "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml" || \
+        log_warning "Gateway API CRD install returned non-zero — may already be present"
+
+    log_info "Installing GAIE CRDs (ref=${GAIE_VERSION})..."
+    kubectl apply -k "https://github.com/kubernetes-sigs/gateway-api-inference-extension/config/crd/?ref=${GAIE_VERSION}" || \
+        log_warning "GAIE CRD install returned non-zero — may already be present"
+}
+
 deploy_epp() {
     log_info "Deploying EPP infrastructure (GAIE standalone chart v${GAIE_VERSION})..."
 

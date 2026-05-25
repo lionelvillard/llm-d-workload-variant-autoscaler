@@ -38,7 +38,6 @@ SKIP_TLS_VERIFY=${SKIP_TLS_VERIFY:-"false"}
 WVA_LOG_LEVEL=${WVA_LOG_LEVEL:-"info"}
 # Optional: multi-controller isolation (sets controller_instance on metrics / selectors when non-empty).
 CONTROLLER_INSTANCE=${CONTROLLER_INSTANCE:-""}
-NAMESPACE_SCOPED=${NAMESPACE_SCOPED:-false}
 
 ENABLE_SCALE_TO_ZERO=${ENABLE_SCALE_TO_ZERO:-true}
 

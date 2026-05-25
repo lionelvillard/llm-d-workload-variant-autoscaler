@@ -14,7 +14,7 @@ Set Prometheus configuration via environment variables in the WVA deployment:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: workload-variant-autoscaler-controller-manager
+  name: controller-manager
 spec:
   template:
     spec:

@@ -466,11 +466,11 @@ go test ./test/e2e/ -v -ginkgo.v -ginkgo.label-filter="full && !flaky" -timeout 
 # For Kind E2E tests (default cluster name: kind-wva-gpu-cluster or from CLUSTER_NAME)
 export KUBECONFIG=~/.kube/config   # or path from kind get kubeconfig
 kubectl get pods -A
-kubectl logs -n workload-variant-autoscaler-system deployment/workload-variant-autoscaler-controller-manager
+kubectl logs -n workload-variant-autoscaler-system deployment/controller-manager
 
 # For OpenShift E2E tests
 oc get pods -A
-oc logs -n workload-variant-autoscaler-system deployment/workload-variant-autoscaler-controller-manager
+oc logs -n workload-variant-autoscaler-system deployment/controller-manager
 ```
 
 #### Keep Cluster Alive After Failure
@@ -499,7 +499,7 @@ make test-e2e-smoke-with-setup
 ```bash
 kubectl get events -A --sort-by='.lastTimestamp'
 kubectl describe va -n <namespace>
-kubectl logs -n workload-variant-autoscaler-system deployment/workload-variant-autoscaler-controller-manager
+kubectl logs -n workload-variant-autoscaler-system deployment/controller-manager
 ```
 
 #### Metrics Not Available
