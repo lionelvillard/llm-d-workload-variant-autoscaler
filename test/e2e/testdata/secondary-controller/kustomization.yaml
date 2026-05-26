@@ -8,7 +8,7 @@ kind: Kustomization
 #   - optional --controller-instance arg patch
 
 resources:
-- ../../../../config/overlays/cluster-scoped
+- ../../../../config/overlays/cluster-scoped/kubernetes
 
 patches:
 - target:

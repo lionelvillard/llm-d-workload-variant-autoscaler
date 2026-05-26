@@ -166,10 +166,10 @@ jobs:
         run: make kustomize
 
       - name: Build kubernetes overlay
-        run: bin/kustomize build config/overlays/cluster-scoped > /dev/null
+        run: bin/kustomize build config/overlays/cluster-scoped/kubernetes > /dev/null
 
       - name: Build openshift overlay
-        run: bin/kustomize build config/overlays/namespace-scoped > /dev/null
+        run: bin/kustomize build config/overlays/namespace-scoped/openshift > /dev/null
 
   # Check if full e2e tests should run (via workflow_dispatch or comment trigger)
   check-full-tests:

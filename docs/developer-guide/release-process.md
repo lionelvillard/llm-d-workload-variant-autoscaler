@@ -98,7 +98,7 @@ So after the workflow runs, the default branch will have the chart metadata alig
 
 ## Helm chart details (deprecated)
 
-> The Helm chart is deprecated. Kustomize (`config/overlays/cluster-scoped/` or `config/overlays/namespace-scoped/`) is the recommended install path. The chart and its release workflow will be removed in a future minor release.
+> The Helm chart is deprecated. Kustomize (`config/overlays/cluster-scoped/kubernetes/` or `config/overlays/namespace-scoped/openshift/`) is the recommended install path. The chart and its release workflow will be removed in a future minor release.
 
 - **Chart location:** `charts/workload-variant-autoscaler/`.
 - **Publish location:** `oci://ghcr.io/llm-d` (package name: `workload-variant-autoscaler`).

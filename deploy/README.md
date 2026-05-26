@@ -253,7 +253,7 @@ cd config/base/manager
 kustomize edit set image controller=ghcr.io/llm-d/llm-d-workload-variant-autoscaler:v0.7.0
 
 # Apply
-kubectl apply -k ../../overlays/cluster-scoped
+kubectl apply -k ../../overlays/cluster-scoped/kubernetes
 ```
 
 #### OpenShift
@@ -262,13 +262,13 @@ kubectl apply -k ../../overlays/cluster-scoped
 cd config/base/manager
 kustomize edit set image controller=ghcr.io/llm-d/llm-d-workload-variant-autoscaler:v0.7.0
 
-kubectl apply -k ../../overlays/namespace-scoped
+kubectl apply -k ../../overlays/namespace-scoped/openshift
 ```
 
 #### Undeploy
 
 ```bash
-kubectl delete -k config/overlays/cluster-scoped    # or config/overlays/namespace-scoped
+kubectl delete -k config/overlays/cluster-scoped/kubernetes    # or config/overlays/namespace-scoped/openshift
 ```
 
 ### Legacy: Helm Chart (Deprecated)
@@ -985,7 +985,7 @@ kubectl get configmap model-accelerator-data -n workload-variant-autoscaler-syst
 - **Main Project**: [README.md](../README.md)
 - **Kubernetes Guide**: [kubernetes/README.md](kubernetes/README.md)
 - **OpenShift Guide**: [openshift/README.md](openshift/README.md)
-- **Kustomize overlays**: [config/overlays/cluster-scoped](../config/overlays/cluster-scoped/), [config/overlays/namespace-scoped](../config/overlays/namespace-scoped/)
+- **Kustomize overlays**: [config/overlays/cluster-scoped/kubernetes](../config/overlays/cluster-scoped/kubernetes/), [config/overlays/namespace-scoped/openshift](../config/overlays/namespace-scoped/openshift/)
 - **Helm Chart (deprecated)**: [charts/workload-variant-autoscaler](../charts/workload-variant-autoscaler/)
 - **API Reference**: [api/v1alpha1](../api/v1alpha1/)
 - **Architecture**: [docs/design/modeling-optimization.md](../docs/design/modeling-optimization.md)

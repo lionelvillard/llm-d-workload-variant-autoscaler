@@ -64,9 +64,9 @@ deploy_wva_controller() {
     # namespace-scoped overlay; Kubernetes installs use the cluster-scoped overlay.
     local kustomize_overlay
     if [ "$ENVIRONMENT" = "openshift" ]; then
-        kustomize_overlay="$(cd "$WVA_PROJECT/config/overlays/namespace-scoped" && pwd)"
+        kustomize_overlay="$(cd "$WVA_PROJECT/config/overlays/namespace-scoped/openshift" && pwd)"
     else
-        kustomize_overlay="$(cd "$WVA_PROJECT/config/overlays/cluster-scoped" && pwd)"
+        kustomize_overlay="$(cd "$WVA_PROJECT/config/overlays/cluster-scoped/kubernetes" && pwd)"
     fi
 
     # Build a throw-away overlay that pins the image without modifying tracked files.
@@ -93,7 +93,7 @@ images:
 EOF
 
     log_info "Installing WVA CRDs..."
-    kubectl apply -f "$WVA_PROJECT/config/base/crd/"
+    kubectl apply -k "$WVA_PROJECT/config/base/crd/"
 
     log_info "Applying Kustomize overlay: $kustomize_overlay"
     kubectl apply -k "$tmp_overlay"

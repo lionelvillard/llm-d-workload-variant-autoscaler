@@ -547,7 +547,7 @@ helm uninstall kube-prometheus-stack -n workload-variant-autoscaler-monitoring
 
 # Delete WVA
 cd /path/to/workload-variant-autoscaler
-kubectl delete -k config/overlays/cluster-scoped
+kubectl delete -k config/overlays/cluster-scoped/kubernetes
 
 # Delete namespaces
 kubectl delete namespace llm-d-optimized-baseline

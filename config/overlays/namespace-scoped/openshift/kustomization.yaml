@@ -6,13 +6,13 @@ namespace: wva-system
 namePrefix: wva-
 
 resources:
-- ../../base/
+- ../../../base/
 # OpenShift's user-workload-monitoring Prometheus needs cluster-monitoring-view
 # permissions to scrape the controller's secure /metrics endpoint.
 - prometheus-adapter-monitoring.yaml
 
 components:
-- ../../components/namespace-scoped/
+- ../../../components/namespace-scoped/
 
 patches:
 # Point WVA at the in-cluster Thanos Querier (OpenShift's user-workload-monitoring

@@ -6,5 +6,5 @@ namespace: wva-system
 namePrefix: wva-
 
 resources:
-- ../../base/
+- ../../../base/
 
