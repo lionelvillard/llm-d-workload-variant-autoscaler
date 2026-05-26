@@ -660,7 +660,7 @@ make deploy-wva-on-k8s   # WVA + monitoring + scaler + LWS; llm-d is managed sep
 
 ```bash
 # Change how often WVA runs optimization (default: 60s)
-kubectl patch configmap wva-variantautoscaling-config \
+kubectl patch configmap wva-manager-config \
   -n workload-variant-autoscaler-system \
   --type merge \
   -p '{"data":{"GLOBAL_OPT_INTERVAL":"30s"}}'

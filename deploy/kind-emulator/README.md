@@ -170,7 +170,7 @@ GPUs are emulated using extended resources:
 
 ```bash
 kubectl port-forward -n workload-variant-autoscaler-system \
-  svc/controller-manager-metrics-service 8080:8080
+  svc/wva-controller-manager-metrics-service 8080:8080
 ```
 
 **Port-forward Prometheus:**

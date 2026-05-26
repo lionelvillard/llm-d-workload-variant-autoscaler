@@ -3,6 +3,8 @@ kind: Kustomization
 
 namespace: wva-system
 
+namePrefix: wva-
+
 resources:
 - ../../base/
 

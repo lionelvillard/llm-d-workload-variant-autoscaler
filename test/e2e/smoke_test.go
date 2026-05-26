@@ -399,7 +399,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			}
 
 			By("Installing secondary namespace-scoped controller via Kustomize")
-			primaryController, err := k8sClient.AppsV1().Deployments(cfg.WVANamespace).Get(ctx, "controller-manager", metav1.GetOptions{})
+			primaryController, err := k8sClient.AppsV1().Deployments(cfg.WVANamespace).Get(ctx, "wva-controller-manager", metav1.GetOptions{})
 			Expect(err).NotTo(HaveOccurred(), "Failed to read primary controller deployment image")
 			Expect(primaryController.Spec.Template.Spec.Containers).NotTo(BeEmpty(), "Primary controller deployment should contain containers")
 			imageRepo, imageTag := splitImage(primaryController.Spec.Template.Spec.Containers[0].Image)
@@ -444,7 +444,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				"patches:",
 				"- target:",
 				"    kind: Deployment",
-				"    name: controller-manager",
+				"    name: wva-controller-manager",
 				"  patch: |",
 				`    - op: add`,
 				`      path: /spec/template/spec/containers/0/env/-`,
@@ -461,7 +461,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			// namespace.
 			//   1. Restoring the primary's ClusterRoleBinding subject namespace.
 			//   2. Creating a dedicated binding for the secondary SA.
-			const crbName = "manager-rolebinding"
+			const crbName = "wva-manager-rolebinding"
 			const crbNameSecondary = "workload-variant-autoscaler-" + crbName + "-secondary"
 			restoreOut, restoreErr := exec.Command("kubectl", "patch", "clusterrolebinding", crbName,
 				"--type=json",
@@ -470,14 +470,14 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			Expect(restoreErr).NotTo(HaveOccurred(), "Failed to restore primary ClusterRoleBinding: %s", string(restoreOut))
 
 			createOut, createErr := exec.Command("kubectl", "create", "clusterrolebinding", crbNameSecondary,
-				"--clusterrole=manager-role",
-				"--serviceaccount="+secondaryController+":controller-manager",
+				"--clusterrole=wva-manager-role",
+				"--serviceaccount="+secondaryController+":wva-controller-manager",
 			).CombinedOutput()
 			Expect(createErr).NotTo(HaveOccurred(), "Failed to create secondary ClusterRoleBinding: %s", string(createOut))
 
 			// The epp-metrics-reader ClusterRoleBinding is also cluster-scoped and gets overwritten
 			// by the secondary overlay — restore the primary subject and create a secondary binding.
-			const eppCRBName = "epp-metrics-reader-role-binding"
+			const eppCRBName = "wva-epp-metrics-reader-role-binding"
 			const eppCRBNameSecondary = "workload-variant-autoscaler-" + eppCRBName + "-secondary"
 			eppRestoreOut, eppRestoreErr := exec.Command("kubectl", "patch", "clusterrolebinding", eppCRBName,
 				"--type=json",
@@ -486,14 +486,14 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			Expect(eppRestoreErr).NotTo(HaveOccurred(), "Failed to restore primary epp-metrics ClusterRoleBinding: %s", string(eppRestoreOut))
 
 			eppCreateOut, eppCreateErr := exec.Command("kubectl", "create", "clusterrolebinding", eppCRBNameSecondary,
-				"--clusterrole=epp-metrics-reader-role",
-				"--serviceaccount="+secondaryController+":epp-metrics-reader",
+				"--clusterrole=wva-epp-metrics-reader-role",
+				"--serviceaccount="+secondaryController+":wva-epp-metrics-reader",
 			).CombinedOutput()
 			Expect(eppCreateErr).NotTo(HaveOccurred(), "Failed to create secondary epp-metrics ClusterRoleBinding: %s", string(eppCreateOut))
 
 			// metrics-auth-rolebinding is also cluster-scoped and gets overwritten by the secondary
 			// overlay — restore the primary subject and create a per-deployment secondary binding.
-			const metricsAuthCRBName = "metrics-auth-rolebinding"
+			const metricsAuthCRBName = "wva-metrics-auth-rolebinding"
 			const metricsAuthCRBNameSecondary = "workload-variant-autoscaler-" + metricsAuthCRBName + "-secondary"
 			metricsAuthRestoreOut, metricsAuthRestoreErr := exec.Command("kubectl", "patch", "clusterrolebinding", metricsAuthCRBName,
 				"--type=json",
@@ -502,8 +502,8 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			Expect(metricsAuthRestoreErr).NotTo(HaveOccurred(), "Failed to restore primary metrics-auth ClusterRoleBinding: %s", string(metricsAuthRestoreOut))
 
 			metricsAuthCreateOut, metricsAuthCreateErr := exec.Command("kubectl", "create", "clusterrolebinding", metricsAuthCRBNameSecondary,
-				"--clusterrole=metrics-auth-role",
-				"--serviceaccount="+secondaryController+":controller-manager",
+				"--clusterrole=wva-metrics-auth-role",
+				"--serviceaccount="+secondaryController+":wva-controller-manager",
 			).CombinedOutput()
 			Expect(metricsAuthCreateErr).NotTo(HaveOccurred(), "Failed to create secondary metrics-auth ClusterRoleBinding: %s", string(metricsAuthCreateOut))
 

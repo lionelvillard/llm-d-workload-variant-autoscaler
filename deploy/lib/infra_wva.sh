@@ -92,30 +92,33 @@ images:
   newTag: "$WVA_IMAGE_TAG"
 EOF
 
+    log_info "Installing WVA CRDs..."
+    kubectl apply -f "$WVA_PROJECT/config/base/crd/"
+
     log_info "Applying Kustomize overlay: $kustomize_overlay"
     kubectl apply -k "$tmp_overlay"
 
     if [ "${ENABLE_SCALE_TO_ZERO:-false}" = "true" ]; then
         log_info "Enabling scale-to-zero in WVA ConfigMap (ENABLE_SCALE_TO_ZERO=true)..."
-        kubectl patch configmap wva-variantautoscaling-config \
+        kubectl patch configmap wva-manager-config \
             -n "$WVA_NS" --type=merge \
             -p '{"data":{"WVA_SCALE_TO_ZERO":"true"}}'
     fi
 
     # On shared clusters (e.g. OpenShift CI), concurrent runs produce the same
-    # ClusterRoleBinding name (manager-rolebinding) because the overlay uses a
+    # ClusterRoleBinding name (wva-manager-rolebinding) because the overlay uses a
     # fixed name. Each apply overwrites the subject namespace, breaking any other
     # run that applied first. Create a per-deployment binding named after WVA_NS so
     # each run has its own authoritative binding that survives concurrent applies.
     log_info "Creating per-deployment ClusterRoleBindings for SA in $WVA_NS (shared cluster isolation)"
     kubectl create clusterrolebinding "workload-variant-autoscaler-manager-${WVA_NS}" \
-        --clusterrole=manager-role \
-        --serviceaccount="${WVA_NS}:controller-manager" \
+        --clusterrole=wva-manager-role \
+        --serviceaccount="${WVA_NS}:wva-controller-manager" \
         --dry-run=client -o yaml | kubectl apply -f -
     if kubectl get clusterrole cluster-monitoring-view &>/dev/null; then
         kubectl create clusterrolebinding "workload-variant-autoscaler-cluster-monitoring-view-${WVA_NS}" \
             --clusterrole=cluster-monitoring-view \
-            --serviceaccount="${WVA_NS}:controller-manager" \
+            --serviceaccount="${WVA_NS}:wva-controller-manager" \
             --dry-run=client -o yaml | kubectl apply -f -
     else
         log_info "cluster-monitoring-view ClusterRole not found — skipping binding (non-OpenShift cluster)"

@@ -4,8 +4,8 @@ kind: Kustomization
 resources:
 - namespace.yaml
 - deployment.yaml
-- wva-configmap.yaml
-- wva-saturation-scaling-configmap.yaml
+- manager-configmap.yaml
+- saturation-scaling-configmap.yaml
 - service.yaml
 - serviceaccount.yaml
 

@@ -3,6 +3,8 @@ kind: Kustomization
 
 namespace: wva-system
 
+namePrefix: wva-
+
 resources:
 - ../../base/
 # OpenShift's user-workload-monitoring Prometheus needs cluster-monitoring-view
@@ -20,7 +22,7 @@ patches:
 - path: configmap-patch.yaml
   target:
     kind: ConfigMap
-    name: wva-variantautoscaling-config
+    name: manager-config
 - path: deployment-patch.yaml
   target:
     kind: Deployment

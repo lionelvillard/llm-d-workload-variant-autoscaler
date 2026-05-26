@@ -40,7 +40,7 @@
 
    Extract the Bearer token from the EPP metrics reader secret:
    ```bash
-   TOKEN=$(kubectl -n workload-variant-autoscaler-system get secret epp-metrics-token -o jsonpath='{.data.token}' | base64 --decode)
+   TOKEN=$(kubectl -n workload-variant-autoscaler-system get secret wva-epp-metrics-token -o jsonpath='{.data.token}' | base64 --decode)
    ```
 
    Port-forward the EPP metrics service to localhost:9090:
