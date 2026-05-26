@@ -94,7 +94,6 @@ EOF
 
     log_info "Applying Kustomize overlay: $kustomize_overlay"
     kubectl apply -k "$tmp_overlay"
-    rm -rf "$tmp_overlay"
 
     if [ "${ENABLE_SCALE_TO_ZERO:-false}" = "true" ]; then
         log_info "Enabling scale-to-zero in WVA ConfigMap (ENABLE_SCALE_TO_ZERO=true)..."

@@ -1,7 +1,7 @@
 # workload-variant-autoscaler
 
 > **DEPRECATED**: This Helm chart is deprecated. Kustomize is now the recommended install method.
-> Use `kubectl apply -k config/overlays/cluster-scoped/` (Kubernetes) or `kubectl apply -k config/overlays/namespace-scoped/` (OpenShift).
+> Use `kubectl apply -k config/default/` (Kubernetes) or `kubectl apply -k config/openshift/` (OpenShift).
 > See the [Deployment Guide](../../deploy/README.md) for details.
 > This chart will be removed in the next minor release.
 

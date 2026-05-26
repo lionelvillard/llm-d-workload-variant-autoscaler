@@ -104,7 +104,6 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	# match the (<app>-)?<kind>.yaml convention used under config/.
 	mv config/base/crd/llmd.ai_variantautoscalings.yaml config/base/crd/variantautoscalings-customresourcedefinition.yaml
 	mv config/base/rbac/role.yaml config/base/rbac/manager-clusterrole.yaml
-	cp config/base/crd/variantautoscalings-customresourcedefinition.yaml charts/workload-variant-autoscaler/crds/llmd.ai_variantautoscalings.yaml
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -548,14 +547,6 @@ ifndef ignore-not-found
   ignore-not-found = false
 endif
 
-# .PHONY: deploy
-# deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-# 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-# 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
-
-# .PHONY: undeploy
-# undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-# 	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Dependencies
 

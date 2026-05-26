@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Deploying WVA and llm-d infrastructure..."
+ echo "Deploying WVA and llm-d infrastructure..."
 echo "  MODEL_ID: $MODEL_ID"
 echo "  ACCELERATOR_TYPE: $ACCELERATOR_TYPE"
 echo "  LLMD_NS: $LLMD_NS"
@@ -48,7 +48,7 @@ SKIP_CLUSTER_CRDS=true \
 ./deploy/install-epp.sh
 
 # Tune saturation thresholds for CI simulator mode.
-kubectl patch configmap saturation-scaling-config \
+kubectl patch configmap wva-saturation-scaling-config \
   -n "$WVA_NAMESPACE" --type=merge \
   -p "$(printf '{"data":{"default":"kvSpareTrigger: %s\\nqueueSpareTrigger: %s\\n"}}' \
     "${KV_SPARE_TRIGGER}" "${QUEUE_SPARE_TRIGGER}")"
