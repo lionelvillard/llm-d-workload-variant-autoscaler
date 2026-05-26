@@ -87,7 +87,7 @@ spec:
       volumes:
       - name: wva-config
         configMap:
-          name: wva-variantautoscaling-config
+          name: manager-config
       - name: epp-metrics-token
         secret:
           secretName: epp-metrics-token
