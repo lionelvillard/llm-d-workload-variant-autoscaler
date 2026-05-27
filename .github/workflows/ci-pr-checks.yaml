@@ -297,7 +297,7 @@ jobs:
         run: go mod download
 
       - name: Install Kind
-        run: deploy/ci/prchecks/install-kind.sh
+        run: deploy/ci-pr-checks/install-kind.sh
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -306,7 +306,7 @@ jobs:
         id: build-image
         env:
           CHECKOUT_SHA: ${{ needs.check-code-changes.outputs.pr_head_sha || github.sha }}
-        run: deploy/ci/prchecks/build-wva-image-local.sh
+        run: deploy/ci-pr-checks/build-wva-image-local.sh
 
       - name: Run e2e tests (smoke)
         shell: bash
@@ -393,7 +393,7 @@ jobs:
         run: go mod download
 
       - name: Install Kind
-        run: deploy/ci/prchecks/install-kind.sh
+        run: deploy/ci-pr-checks/install-kind.sh
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -402,7 +402,7 @@ jobs:
         id: build-image
         env:
           CHECKOUT_SHA: ${{ needs.check-code-changes.outputs.pr_head_sha || github.sha }}
-        run: deploy/ci/prchecks/build-wva-image-local.sh
+        run: deploy/ci-pr-checks/build-wva-image-local.sh
 
       - name: Run e2e tests (full)
         shell: bash

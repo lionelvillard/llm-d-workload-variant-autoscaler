@@ -44,6 +44,7 @@ GAIE_VERSION="$GAIE_VERSION" \
 LLM_D_RELEASE="$LLM_D_RELEASE" \
 ENVIRONMENT=openshift \
 ENABLE_SCALE_TO_ZERO=true \
+SKIP_CLUSTER_CRDS=true \
 ./deploy/install-epp.sh
 
 # Tune saturation thresholds for CI simulator mode.
