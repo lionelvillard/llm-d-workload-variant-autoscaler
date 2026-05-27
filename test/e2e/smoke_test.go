@@ -348,7 +348,6 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		})
 	})
 
-
 	Context("Basic VA lifecycle", Serial, Ordered, func() {
 		var (
 			poolName         = "smoke-test-pool"
