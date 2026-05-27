@@ -33,12 +33,6 @@ func splitImage(image string) (string, string) {
 }
 
 var _ = Describe("Multi-controller Tests - Dual namespace-scoped isolation", Label("multi-controller"), func() {
-	// TODO: run dual-controller isolation in a dedicated fresh cluster rather than layering
-	// a namespace-scoped secondary controller on top of an existing cluster-scoped primary.
-	// The two modes are mutually exclusive by design: cluster-scoped ClusterRoleBindings
-	// (metrics-auth-rolebinding, manager-rolebinding, epp-metrics-reader-role-binding) are
-	// shared resources and get overwritten by each kustomize apply, requiring fragile
-	// patch-and-restore workarounds. A proper fix is a separate Kind cluster per scenario.
 	Context("Dual namespace-scoped controllers isolation", Serial, Ordered, func() {
 		var (
 			primaryNamespace    = "llm-d-sim"
@@ -127,64 +121,10 @@ var _ = Describe("Multi-controller Tests - Dual namespace-scoped isolation", Lab
 			out, err := cmd.CombinedOutput()
 			Expect(err).NotTo(HaveOccurred(), "Secondary controller kustomize install failed: %s", string(out))
 
-			// The secondary overlay shares the same kustomize resource names as the primary, so
-			// kubectl apply overwrites the shared ClusterRoleBinding to point at the secondary
-			// namespace.
-			//   1. Restoring the primary's ClusterRoleBinding subject namespace.
-			//   2. Creating a dedicated binding for the secondary SA.
-			const crbName = "wva-manager-rolebinding"
-			const crbNameSecondary = "workload-variant-autoscaler-" + crbName + "-secondary"
-			restoreOut, restoreErr := exec.Command("kubectl", "patch", "clusterrolebinding", crbName,
-				"--type=json",
-				"-p", `[{"op":"replace","path":"/subjects/0/namespace","value":"`+cfg.WVANamespace+`"}]`,
-			).CombinedOutput()
-			Expect(restoreErr).NotTo(HaveOccurred(), "Failed to restore primary ClusterRoleBinding: %s", string(restoreOut))
-
-			createOut, createErr := exec.Command("kubectl", "create", "clusterrolebinding", crbNameSecondary,
-				"--clusterrole=wva-manager-role",
-				"--serviceaccount="+secondaryController+":wva-controller-manager",
-			).CombinedOutput()
-			Expect(createErr).NotTo(HaveOccurred(), "Failed to create secondary ClusterRoleBinding: %s", string(createOut))
-
-			// The epp-metrics-reader ClusterRoleBinding is also cluster-scoped and gets overwritten
-			// by the secondary overlay — restore the primary subject and create a secondary binding.
-			const eppCRBName = "wva-epp-metrics-reader-role-binding"
-			const eppCRBNameSecondary = "workload-variant-autoscaler-" + eppCRBName + "-secondary"
-			eppRestoreOut, eppRestoreErr := exec.Command("kubectl", "patch", "clusterrolebinding", eppCRBName,
-				"--type=json",
-				"-p", `[{"op":"replace","path":"/subjects/0/namespace","value":"`+cfg.WVANamespace+`"}]`,
-			).CombinedOutput()
-			Expect(eppRestoreErr).NotTo(HaveOccurred(), "Failed to restore primary epp-metrics ClusterRoleBinding: %s", string(eppRestoreOut))
-
-			eppCreateOut, eppCreateErr := exec.Command("kubectl", "create", "clusterrolebinding", eppCRBNameSecondary,
-				"--clusterrole=wva-epp-metrics-reader-role",
-				"--serviceaccount="+secondaryController+":wva-epp-metrics-reader",
-			).CombinedOutput()
-			Expect(eppCreateErr).NotTo(HaveOccurred(), "Failed to create secondary epp-metrics ClusterRoleBinding: %s", string(eppCreateOut))
-
-			// metrics-auth-rolebinding is also cluster-scoped and gets overwritten by the secondary
-			// overlay — restore the primary subject and create a per-deployment secondary binding.
-			const metricsAuthCRBName = "wva-metrics-auth-rolebinding"
-			const metricsAuthCRBNameSecondary = "workload-variant-autoscaler-" + metricsAuthCRBName + "-secondary"
-			metricsAuthRestoreOut, metricsAuthRestoreErr := exec.Command("kubectl", "patch", "clusterrolebinding", metricsAuthCRBName,
-				"--type=json",
-				"-p", `[{"op":"replace","path":"/subjects/0/namespace","value":"`+cfg.WVANamespace+`"}]`,
-			).CombinedOutput()
-			Expect(metricsAuthRestoreErr).NotTo(HaveOccurred(), "Failed to restore primary metrics-auth ClusterRoleBinding: %s", string(metricsAuthRestoreOut))
-
-			metricsAuthCreateOut, metricsAuthCreateErr := exec.Command("kubectl", "create", "clusterrolebinding", metricsAuthCRBNameSecondary,
-				"--clusterrole=wva-metrics-auth-role",
-				"--serviceaccount="+secondaryController+":wva-controller-manager",
-			).CombinedOutput()
-			Expect(metricsAuthCreateErr).NotTo(HaveOccurred(), "Failed to create secondary metrics-auth ClusterRoleBinding: %s", string(metricsAuthCreateOut))
-
 			DeferCleanup(func() {
-				_ = exec.Command("kubectl", "delete", "clusterrolebinding", crbNameSecondary, "--ignore-not-found=true").Run()
-				_ = exec.Command("kubectl", "delete", "clusterrolebinding", eppCRBNameSecondary, "--ignore-not-found=true").Run()
-				_ = exec.Command("kubectl", "delete", "clusterrolebinding", metricsAuthCRBNameSecondary, "--ignore-not-found=true").Run()
 				// Delete the secondary controller namespace (cascades to all namespace-scoped
 				// resources). Do NOT use kubectl delete -k here — it would delete the shared
-				// ClusterRoles/ClusterRoleBindings that the primary controller depends on.
+				// ClusterRoles that the primary controller depends on.
 				_ = exec.Command("kubectl", "delete", "namespace", secondaryController, "--ignore-not-found=true").Run()
 				_ = exec.Command("kubectl", "delete", "namespace", secondaryNamespace, "--ignore-not-found=true").Run()
 				_ = os.RemoveAll(tmpOverlay)

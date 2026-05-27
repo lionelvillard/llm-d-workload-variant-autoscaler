@@ -42,7 +42,13 @@ undeploy_wva_controller() {
     log_info "Uninstalling Workload-Variant-Autoscaler..."
 
     local kustomize_overlay
-    if [ "$ENVIRONMENT" = "openshift" ]; then
+    if [ -n "${WVA_OVERLAY:-}" ]; then
+        if [[ "$WVA_OVERLAY" = /* ]]; then
+            kustomize_overlay="$(cd "$WVA_OVERLAY" && pwd)"
+        else
+            kustomize_overlay="$(cd "$WVA_PROJECT/$WVA_OVERLAY" && pwd)"
+        fi
+    elif [ "$ENVIRONMENT" = "openshift" ]; then
         kustomize_overlay="$(cd "$WVA_PROJECT/config/overlays/namespace-scoped/openshift" && pwd)"
     else
         kustomize_overlay="$(cd "$WVA_PROJECT/config/overlays/cluster-scoped/kubernetes" && pwd)"

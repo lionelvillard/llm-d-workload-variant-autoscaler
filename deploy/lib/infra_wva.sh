@@ -61,9 +61,18 @@ deploy_wva_controller() {
     log_info "Using image: $WVA_IMAGE_REPO:$WVA_IMAGE_TAG"
 
     # Select the Kustomize overlay by install scope. OpenShift installs use the
-    # namespace-scoped overlay; Kubernetes installs use the cluster-scoped overlay.
+    # namespace-scoped overlay; Kubernetes installs default to the cluster-scoped
+    # overlay. Set WVA_OVERLAY to an absolute path or a config/overlays/<scope>/<env>
+    # subpath to override (used by the multi-controller e2e job to install the
+    # primary controller namespace-scoped on kind).
     local kustomize_overlay
-    if [ "$ENVIRONMENT" = "openshift" ]; then
+    if [ -n "${WVA_OVERLAY:-}" ]; then
+        if [[ "$WVA_OVERLAY" = /* ]]; then
+            kustomize_overlay="$(cd "$WVA_OVERLAY" && pwd)"
+        else
+            kustomize_overlay="$(cd "$WVA_PROJECT/$WVA_OVERLAY" && pwd)"
+        fi
+    elif [ "$ENVIRONMENT" = "openshift" ]; then
         kustomize_overlay="$(cd "$WVA_PROJECT/config/overlays/namespace-scoped/openshift" && pwd)"
     else
         kustomize_overlay="$(cd "$WVA_PROJECT/config/overlays/cluster-scoped/kubernetes" && pwd)"
