@@ -1,0 +1,16 @@
+name: CI - E2E Multi-controller
+
+# Stub workflow for the dedicated dual namespace-scoped controllers e2e job.
+# A subsequent PR replaces the placeholder step with the real kind-based job
+# (mirroring `e2e-tests-smoke` in ci-pr-checks.yaml). The job name is fixed
+# now so branch-protection rules can reference it.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  e2e-multi-controller:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Stub
+        run: echo "stub - implementation lands in a follow-up PR"
