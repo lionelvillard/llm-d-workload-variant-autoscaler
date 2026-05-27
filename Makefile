@@ -307,6 +307,35 @@ test-e2e-full: ## Run full e2e test suite
 .PHONY: test-e2e-smoke-with-setup
 test-e2e-smoke-with-setup: deploy-e2e-infra test-e2e-smoke
 
+# Runs only the multi-controller (dual namespace-scoped) e2e tests.
+.PHONY: test-e2e-multi-controller
+test-e2e-multi-controller: ## Run multi-controller e2e tests
+	@echo "Running multi-controller e2e tests..."
+	$(eval FOCUS_ARGS := $(if $(FOCUS),-ginkgo.focus="$(FOCUS)",))
+	$(eval SKIP_ARGS := $(if $(SKIP),-ginkgo.skip="$(SKIP)",))
+	KUBECONFIG=$(KUBECONFIG) \
+	ENVIRONMENT=$(ENVIRONMENT) \
+	WVA_NAMESPACE=$(CONTROLLER_NAMESPACE) \
+	LLMD_NAMESPACE=$(E2E_EMULATED_LLMD_NAMESPACE) \
+	MONITORING_NAMESPACE=$(E2E_MONITORING_NAMESPACE) \
+	WVA_E2E_SECONDARY_OVERLAY_PATH=$${WVA_E2E_SECONDARY_OVERLAY_PATH:-$(E2E_WVA_SECONDARY_OVERLAY_PATH)} \
+	USE_SIMULATOR=$(USE_SIMULATOR) \
+	SCALE_TO_ZERO_ENABLED=$(SCALE_TO_ZERO_ENABLED) \
+	SCALER_BACKEND=$(SCALER_BACKEND) \
+	MODEL_ID=$(MODEL_ID) \
+	go test ./test/e2e/ -timeout 35m -v -ginkgo.v \
+		-ginkgo.label-filter="multi-controller" $(FOCUS_ARGS) $(SKIP_ARGS); \
+	TEST_EXIT_CODE=$$?; \
+	echo ""; \
+	echo "=========================================="; \
+	echo "Test execution completed. Exit code: $$TEST_EXIT_CODE"; \
+	echo "=========================================="; \
+	exit $$TEST_EXIT_CODE
+
+# Convenience target that deploys infra + runs multi-controller tests.
+.PHONY: test-e2e-multi-controller-with-setup
+test-e2e-multi-controller-with-setup: deploy-e2e-infra test-e2e-multi-controller
+
 # Convenience target that deploys infra + runs full test suite.
 # Set DELETE_CLUSTER=true to delete Kind cluster after tests (default: keep cluster for debugging).
 # LWS is installed because the full suite includes LeaderWorkerSet scale-from-zero tests.
