@@ -390,7 +390,7 @@ jobs:
       LLM_D_RELEASE: v0.7.0
       GAIE_VERSION: v1.5.0
       # PR-specific namespaces for isolation between concurrent PR tests
-      LLMD_NAMESPACE: llm-d-optimized-baseline-pr-${{ needs.gate.outputs.pr_number || github.run_id }}
+      LLMD_NAMESPACE: llm-d-autoscaler-pr-${{ needs.gate.outputs.pr_number || github.run_id }}
       WVA_NAMESPACE: llm-d-autoscaler-pr-${{ needs.gate.outputs.pr_number || github.run_id }}
       # Unique release names per run to avoid conflicts
       WVA_RELEASE_NAME: wva-e2e-${{ github.run_id }}
