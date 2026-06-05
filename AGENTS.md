@@ -41,6 +41,10 @@
 - Avoid circular dependencies
 - Place tests in `*_test.go` files
 
+### Headers and Licenses
+
+- Do not include license headers in source files.
+
 ## Documentation
 
 Prefer placing documentation in the `docs/` directory.
