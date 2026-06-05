@@ -185,6 +185,13 @@ const (
 	// WVAKvCacheTokensCapacity is a gauge that tracks total KV cache token capacity per variant.
 	// Labels: variant_name, namespace, model_name
 	WVAKvCacheTokensCapacity = "wva_kv_cache_tokens_capacity"
+
+	// WVACoordinatorCycleErrorsTotal is a counter that tracks the total number
+	// of Coordinator-loop-level cycle errors (e.g., scale-target discovery
+	// failures). Errors raised inside individual plugins are reported by the
+	// plugins themselves under their own metric names.
+	// Labels: kind (e.g. "discovery")
+	WVACoordinatorCycleErrorsTotal = "wva_coordinator_cycle_errors_total"
 )
 
 // Metric Label Names
