@@ -54,6 +54,7 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/controller"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/controller/indexers"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/coordinator"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/datastore"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/saturation"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/scalefromzero"
@@ -535,6 +536,30 @@ func main() {
 	if err = configMapReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create configmap controller")
 		os.Exit(1)
+	}
+
+	// Coordinator: cluster-wide leader-elected loop that dispatches a
+	// selected set of HPAs and ScaledObjects to registered plugins.
+	// Off by default; opt in via coordinator.enabled in the unified config.
+	if cfg.CoordinatorEnabled() {
+		coord, err := coordinator.New(mgr.GetClient(), nil, coordinator.Options{
+			Interval:    cfg.CoordinatorInterval(),
+			KEDAEnabled: kedaEnabled,
+		})
+		if err != nil {
+			setupLog.Error(err, "unable to construct Coordinator")
+			os.Exit(1)
+		}
+		if err := mgr.Add(coord); err != nil {
+			setupLog.Error(err, "unable to add Coordinator to manager")
+			os.Exit(1)
+		}
+		setupLog.Info("Coordinator enabled",
+			"interval", cfg.CoordinatorInterval(),
+			"kedaEnabled", kedaEnabled,
+		)
+	} else {
+		setupLog.Info("Coordinator disabled (set coordinator.enabled=true to enable)")
 	}
 
 	if metricsCertWatcher != nil {
