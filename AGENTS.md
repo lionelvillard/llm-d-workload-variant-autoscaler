@@ -53,17 +53,12 @@ There are 3 main types of documentation targeting different audiences:
    - Contributing guidelines
    - usually in the `docs/developer-guide/` subdirectory
 
-2. **Administrator Documentation** - For operators deploying and managing the autoscaler controller
-   - Installation and configuration
-   - Deployment guidelines
-   - Monitoring and troubleshooting
-   - usually located under the `docs/user-guide/` directory (for example, in an admin-focused subdirectory)
+2. **Agents plans** - For AI agent plans.
+   - in the `docs/plans/<area>/` subdirectory, where `<area>` is the specific area of the project (e.g., `engine`, `installation`, `monitoring`, etc.)
 
-3. **End-User Documentation** - For application developers creating applications that use the autoscaler
-   - Usage guides and examples
-   - API reference
-   - Best practices and common patterns
-   - usually located under the `docs/user-guide/` directory (for example, in an end-user-focused subdirectory)
+3. **Superpower specs** - For superpower specification
+   - in the `docs/superpower/<area>/` subdirectory, where `<area>` is the specific area of the project (e.g., `engine`, `installation`, `monitoring`, etc.)
+
 
 ## Kustomize / Config File Naming
 
