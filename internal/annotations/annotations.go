@@ -45,6 +45,18 @@ const (
 	// they exist only within the WVA optimization pipeline.
 	Synthetic = "llm-d.ai/synthetic"
 
+	// CoordinatorMinMaxReplicas is the optional per-scale-target lower bound on the
+	// upper replica count the gpu-rebalance Coordinator plugin may write
+	// (HPA spec.maxReplicas or ScaledObject spec.maxReplicaCount). When unset,
+	// no floor is applied beyond 1.
+	CoordinatorMinMaxReplicas = "coordinator.wva.llm-d.ai/min-max-replicas"
+
+	// CoordinatorMaxMaxReplicas is the optional per-scale-target upper bound on the
+	// upper replica count the gpu-rebalance Coordinator plugin may write
+	// (HPA spec.maxReplicas or ScaledObject spec.maxReplicaCount). When unset,
+	// no ceiling is applied beyond the cluster GPU budget.
+	CoordinatorMaxMaxReplicas = "coordinator.wva.llm-d.ai/max-max-replicas"
+
 	// defaultVariantCost matches the kubebuilder default on VariantAutoscalingConfigSpec.
 	defaultVariantCost = "10.0"
 )

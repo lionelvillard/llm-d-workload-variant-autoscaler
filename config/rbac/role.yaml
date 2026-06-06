@@ -81,6 +81,7 @@ rules:
   verbs:
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - inference.networking.k8s.io
@@ -98,6 +99,7 @@ rules:
   verbs:
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - leaderworkerset.x-k8s.io

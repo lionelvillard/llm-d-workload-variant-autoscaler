@@ -27,12 +27,20 @@ type Config struct {
 	coordinator coordinatorConfig
 }
 
-// coordinatorConfig holds Coordinator loop configuration. Plugin
-// sub-blocks (under coordinator.plugins.<name>) are owned by individual
-// plugins and live in their own packages.
+// coordinatorConfig holds Coordinator loop configuration plus a
+// plugin sub-block per registered plugin. Each plugin owns its
+// sub-block schema; nothing here is shared across plugins.
 type coordinatorConfig struct {
-	enabled  bool
-	interval time.Duration
+	enabled      bool
+	interval     time.Duration
+	gpuRebalance gpuRebalanceConfig
+}
+
+// gpuRebalanceConfig holds the configuration for the gpu-rebalance
+// Coordinator plugin (UC1).
+type gpuRebalanceConfig struct {
+	enabled           bool
+	minChangeInterval time.Duration
 }
 
 // configSyncState tracks configuration sync state used for startup/readiness checks.
@@ -303,6 +311,25 @@ func (c *Config) CoordinatorInterval() time.Duration {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.coordinator.interval
+}
+
+// GPURebalanceEnabled reports whether the gpu-rebalance Coordinator
+// plugin is enabled. Has effect only when CoordinatorEnabled is true.
+// Thread-safe.
+func (c *Config) GPURebalanceEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.coordinator.gpuRebalance.enabled
+}
+
+// GPURebalanceMinChangeInterval returns the per-target damping window
+// for the gpu-rebalance plugin. Returns zero when unset; callers
+// should treat zero as "use the package default".
+// Thread-safe.
+func (c *Config) GPURebalanceMinChangeInterval() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.coordinator.gpuRebalance.minChangeInterval
 }
 
 // ============================================================================

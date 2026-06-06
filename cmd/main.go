@@ -55,7 +55,12 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/controller"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/controller/indexers"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/coordinator"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/coordinator/plugins/gpurebalance"
+	gpurebalancesignal "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/coordinator/plugins/gpurebalance/signal"
+	gpurebalancestrategy "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/coordinator/plugins/gpurebalance/strategy"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/datastore"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/discovery"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/pipeline"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/saturation"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/scalefromzero"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
@@ -542,7 +547,40 @@ func main() {
 	// selected set of HPAs and ScaledObjects to registered plugins.
 	// Off by default; opt in via coordinator.enabled in the unified config.
 	if cfg.CoordinatorEnabled() {
-		coord, err := coordinator.New(mgr.GetClient(), nil, coordinator.Options{
+		var plugins []coordinator.Plugin
+
+		if cfg.GPURebalanceEnabled() {
+			gpuDisc := discovery.NewK8sWithGpuOperator(mgr.GetClient())
+			inv := pipeline.NewTypeInventory("coordinator-gpu-rebalance-inventory", gpuDisc)
+			budgetProvider := gpurebalance.NewInventoryBudgetProvider(inv)
+
+			plugin, err := gpurebalance.New(
+				mgr.GetClient(),
+				mgr.GetScheme(),
+				mgr.GetEventRecorderFor("workload-variant-autoscaler-gpu-rebalance"),
+				budgetProvider,
+				gpurebalancesignal.NewCurrentBound(),
+				gpurebalancestrategy.NewProportional(),
+				gpurebalance.NewScaleTargetGPULookup(mgr.GetClient()),
+				gpurebalance.Config{
+					MinChangeInterval: cfg.GPURebalanceMinChangeInterval(),
+				},
+			)
+			if err != nil {
+				setupLog.Error(err, "unable to construct gpu-rebalance plugin")
+				os.Exit(1)
+			}
+			if err := gpurebalance.RegisterMetrics(crmetrics.Registry); err != nil {
+				setupLog.Error(err, "unable to register gpu-rebalance metrics")
+				os.Exit(1)
+			}
+			plugins = append(plugins, plugin)
+			setupLog.Info("Coordinator gpu-rebalance plugin registered",
+				"minChangeInterval", cfg.GPURebalanceMinChangeInterval(),
+			)
+		}
+
+		coord, err := coordinator.New(mgr.GetClient(), plugins, coordinator.Options{
 			Interval:    cfg.CoordinatorInterval(),
 			KEDAEnabled: kedaEnabled,
 		})
@@ -557,6 +595,7 @@ func main() {
 		setupLog.Info("Coordinator enabled",
 			"interval", cfg.CoordinatorInterval(),
 			"kedaEnabled", kedaEnabled,
+			"plugins", len(plugins),
 		)
 	} else {
 		setupLog.Info("Coordinator disabled (set coordinator.enabled=true to enable)")
