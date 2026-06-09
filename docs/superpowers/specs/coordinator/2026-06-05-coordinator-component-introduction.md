@@ -59,7 +59,7 @@ The detailed design for this use case will be addressed in a future proposal.
 │  │ (per-pool, existing)│         │ (cluster-wide, this spec)   │   │
 │  │                     │         │                             │   │
 │  │ emits               │         │ writes                      │   │
-│  │ wva_desired_replicas│         │ spec.maxReplicas (HPA) and  │   │
+│  │ wva_desired_replicas│         │ spec.maxReplicas (HPA) or   │   │
 │  │                     │         │ spec.maxReplicaCount (SO)   │   │
 │  │                     │         │ (+ future: Deployment/LWS   │   │
 │  │                     │         │   replicas for UC2)         │   │
