@@ -60,8 +60,8 @@ There are 3 main types of documentation targeting different audiences:
 2. **Agents plans** - For AI agent plans.
    - in the `docs/plans/<area>/` subdirectory, where `<area>` is the specific area of the project (e.g., `engine`, `installation`, `monitoring`, etc.)
 
-3. **Superpower specs** - For superpower specification
-   - in the `docs/superpower/<area>/` subdirectory, where `<area>` is the specific area of the project (e.g., `engine`, `installation`, `monitoring`, etc.)
+3. **Superpowers specs** - For superpowers specification
+   - in the `docs/superpowers/<area>/` subdirectory, where `<area>` is the specific area of the project (e.g., `engine`, `installation`, `monitoring`, etc.)
 
 
 ## Kustomize / Config File Naming
