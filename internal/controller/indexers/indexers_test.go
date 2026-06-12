@@ -64,7 +64,7 @@ var _ = Describe("Indexers", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Setup indexes
-		err = SetupIndexes(testCtx, mgr)
+		err = SetupIndexes(testCtx, mgr, true)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Start the manager's cache
