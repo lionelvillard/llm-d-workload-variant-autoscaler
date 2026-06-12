@@ -50,7 +50,7 @@ import (
 )
 
 var _ = Describe("VariantAutoscalings Controller", func() {
-	Context("When reconciling a resource", func() {
+	Context("When reconciling a resource", Ordered, func() {
 		const resourceName = "test-resource"
 
 		ctx := context.Background()
