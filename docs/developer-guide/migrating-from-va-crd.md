@@ -9,6 +9,10 @@ The annotation-based path removes the need for a separate CRD and aligns WVA wit
 
 ## Before / After — HPA path
 
+> **Note:** The YAML examples below show the minimal migration changes. For production-ready
+> configuration including scale behavior policies, fallback settings, and TLS, refer to the
+> ready-to-use samples in `config/samples/hpa/annotations/` and `config/samples/keda/annotations/`.
+
 **Before (deprecated):** two objects
 
 ```yaml
@@ -150,7 +154,7 @@ spec:
   - type: prometheus
     name: wva-desired-replicas
     metadata:
-      serverAddress: https://prometheus.example.com:9090
+      serverAddress: https://kube-prometheus-stack-prometheus.workload-variant-autoscaler-monitoring.svc.cluster.local:9090
       query: |
         wva_desired_replicas{
           variant_name="sample-deployment",
@@ -159,7 +163,13 @@ spec:
       threshold: '1'
       activationThreshold: '0'
       metricType: "Value"
+      unsafeSsl: "true"  # WARNING: set to "false" in production and provide a CA bundle via authenticationRef
 ```
+
+> **Note on metric label differences:** The HPA path uses `exported_namespace` in the metric selector
+> (added by Prometheus Adapter), while the KEDA path uses `namespace` (the label WVA emits directly).
+> Use the label matching your setup — see the ready-to-use samples in `config/samples/hpa/annotations/`
+> and `config/samples/keda/annotations/` for the exact selectors.
 
 ## Migration steps
 
@@ -182,7 +192,8 @@ spec:
    # Replace <hpa-name>, <namespace>, <modelID> with actual values
    kubectl annotate hpa <hpa-name> -n <namespace> \
      llm-d.ai/managed=true \
-     llm-d.ai/model-id=<modelID>
+     llm-d.ai/model-id=<modelID> \
+     --overwrite
    ```
 
    For KEDA ScaledObject:
@@ -190,7 +201,8 @@ spec:
    ```bash
    kubectl annotate scaledobject <so-name> -n <namespace> \
      llm-d.ai/managed=true \
-     llm-d.ai/model-id=<modelID>
+     llm-d.ai/model-id=<modelID> \
+     --overwrite
    ```
 
 4. **Verify WVA is picking up the annotated resource:**
