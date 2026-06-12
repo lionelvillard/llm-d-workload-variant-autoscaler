@@ -358,7 +358,7 @@ func main() {
 
 	// Setup custom indexes for lookups on VariantAutoscalings
 	setupLog.Info("Setting up indexes")
-	if err := indexers.SetupIndexes(context.Background(), mgr); err != nil {
+	if err := indexers.SetupIndexes(context.Background(), mgr, kedaEnabled); err != nil {
 		setupLog.Error(err, "unable to setup indexes")
 		os.Exit(1)
 	}
