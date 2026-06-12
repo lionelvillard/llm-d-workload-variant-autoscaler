@@ -160,12 +160,6 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 			"name", va.Name,
 			"namespace", va.Namespace,
 			"migration", "docs/developer-guide/migrating-from-va-crd.md")
-		if r.Recorder != nil {
-			r.Recorder.Event(&va, corev1.EventTypeWarning, "Deprecated",
-				"VariantAutoscaling is deprecated and will be removed in a future release. "+
-					"Migrate to the annotation-based path (add llm-d.ai/managed=true to your HPA or ScaledObject). "+
-					"See docs/developer-guide/migrating-from-va-crd.md.")
-		}
 		patch := client.MergeFrom(va.DeepCopy())
 		if va.Annotations == nil {
 			va.Annotations = map[string]string{}
@@ -176,6 +170,13 @@ func (r *VariantAutoscalingReconciler) Reconcile(ctx context.Context, req ctrl.R
 				"name", va.Name, "namespace", va.Namespace)
 			return ctrl.Result{}, err
 		}
+		if r.Recorder != nil {
+			r.Recorder.Event(&va, corev1.EventTypeWarning, "Deprecated",
+				"VariantAutoscaling is deprecated and will be removed in a future release. "+
+					"Migrate to the annotation-based path (add llm-d.ai/managed=true to your HPA or ScaledObject). "+
+					"See docs/developer-guide/migrating-from-va-crd.md.")
+		}
+		originalVA = va.DeepCopy()
 	}
 
 	// Track namespace for namespace-local ConfigMap watching
