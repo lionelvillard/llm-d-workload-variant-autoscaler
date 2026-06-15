@@ -87,11 +87,13 @@ func nodeOf(obj client.Object, namespace string) chainNode {
 		// fake clients sometimes leave TypeMeta empty; infer from concrete type.
 		switch obj.(type) {
 		case *corev1.Pod:
-			apiVersion, kind = "v1", "Pod"
+			apiVersion, kind = constants.PodAPIVersion, constants.PodKind
 		case *appsv1.ReplicaSet:
-			apiVersion, kind = constants.DeploymentAPIVersion, "ReplicaSet"
+			apiVersion, kind = constants.DeploymentAPIVersion, constants.ReplicaSetKind
 		case *appsv1.Deployment:
 			apiVersion, kind = constants.DeploymentAPIVersion, constants.DeploymentKind
+		case *appsv1.StatefulSet:
+			apiVersion, kind = constants.DeploymentAPIVersion, constants.StatefulSetKind
 		case *lwsv1.LeaderWorkerSet:
 			apiVersion, kind = constants.LeaderWorkerSetAPIVersion, constants.LeaderWorkerSetKind
 		}
@@ -109,13 +111,21 @@ func nodeOf(obj client.Object, namespace string) chainNode {
 // signals walkOwnersUp to stop.
 func newTypedFor(owner *metav1.OwnerReference) (client.Object, bool) {
 	switch owner.Kind {
-	case "ReplicaSet":
+	case constants.PodKind:
+		if owner.APIVersion == constants.PodAPIVersion {
+			return &corev1.Pod{}, true
+		}
+	case constants.ReplicaSetKind:
 		if owner.APIVersion == constants.DeploymentAPIVersion {
 			return &appsv1.ReplicaSet{}, true
 		}
 	case constants.DeploymentKind:
 		if owner.APIVersion == constants.DeploymentAPIVersion {
 			return &appsv1.Deployment{}, true
+		}
+	case constants.StatefulSetKind:
+		if owner.APIVersion == constants.DeploymentAPIVersion {
+			return &appsv1.StatefulSet{}, true
 		}
 	case constants.LeaderWorkerSetKind:
 		if owner.APIVersion == constants.LeaderWorkerSetAPIVersion {

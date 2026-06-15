@@ -59,6 +59,10 @@ var (
 const (
 	DeploymentKind            = "Deployment"
 	DeploymentAPIVersion      = "apps/v1"
+	StatefulSetKind           = "StatefulSet"
+	PodKind                   = "Pod"
+	ReplicaSetKind            = "ReplicaSet"
+	PodAPIVersion             = "v1"
 	LeaderWorkerSetKind       = "LeaderWorkerSet"
 	LeaderWorkerSetAPIVersion = "leaderworkerset.x-k8s.io/v1"
 
