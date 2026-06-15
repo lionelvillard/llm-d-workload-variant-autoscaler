@@ -49,6 +49,7 @@ import (
 
 	kedav1alpha1 "github.com/kedacore/keda/v2/apis/keda/v1alpha1"
 	llmdVariantAutoscalingV1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/locator"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/source"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/source/prometheus"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
@@ -185,6 +186,9 @@ func main() {
 	} else {
 		setupLog.Info("KEDA ScaledObject CRD not found - annotation-based discovery limited to HPAs")
 	}
+	// Gate the pod locator's ScaledObject lookups on KEDA availability. Set before
+	// the saturation engine goroutine constructs its locator.
+	locator.SetKEDAEnabled(kedaEnabled)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will

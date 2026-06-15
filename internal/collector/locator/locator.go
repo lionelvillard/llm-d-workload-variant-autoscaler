@@ -11,6 +11,7 @@ package locator
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 
 	kedav1alpha1 "github.com/kedacore/keda/v2/apis/keda/v1alpha1"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/annotations"
@@ -28,6 +29,20 @@ type ManagedScaler struct {
 	HPA          *autoscalingv2.HorizontalPodAutoscaler
 	ScaledObject *kedav1alpha1.ScaledObject
 }
+
+// kedaEnabled records whether the KEDA ScaledObject CRD is installed. It is set
+// once at startup via SetKEDAEnabled before any locator is constructed. Defaults
+// to true so that ScaledObject lookups remain enabled unless explicitly disabled.
+var kedaEnabled atomic.Bool
+
+func init() { kedaEnabled.Store(true) }
+
+// SetKEDAEnabled configures whether locators attempt KEDA ScaledObject lookups.
+// Call once at startup (cmd/main.go) with the result of crd.CheckKEDACRD. When
+// false, the ScaledObject field index is not registered, so locators must skip
+// every ScaledObject access to avoid unregistered-index and unsyncable-informer
+// errors.
+func SetKEDAEnabled(enabled bool) { kedaEnabled.Store(enabled) }
 
 // PodLocator resolves pods to managed scalers. Implementations are safe
 // for concurrent use.
@@ -60,10 +75,11 @@ func New(cached, apiReader client.Reader) (PodLocator, error) {
 		return nil, err
 	}
 	return &podLocator{
-		cached:    cached,
-		apiReader: apiReader,
-		maxDepth:  defaultMaxDepth,
-		cache:     cache,
+		cached:      cached,
+		apiReader:   apiReader,
+		maxDepth:    defaultMaxDepth,
+		cache:       cache,
+		kedaEnabled: kedaEnabled.Load(),
 	}, nil
 }
 
@@ -72,6 +88,9 @@ type podLocator struct {
 	apiReader client.Reader
 	maxDepth  int
 	cache     *resolutionCache
+	// kedaEnabled snapshots the package-level flag at construction. When false,
+	// the ScaledObject field index is not registered, so SO lookups are skipped.
+	kedaEnabled bool
 }
 
 func (l *podLocator) Locate(ctx context.Context, namespace, podName string) (*ManagedScaler, error) {
@@ -110,9 +129,13 @@ func (l *podLocator) LocateByVariant(ctx context.Context, namespace, variantName
 	if err != nil {
 		return nil, err
 	}
-	so, err := l.getManagedScaledObject(ctx, namespace, variantName)
-	if err != nil {
-		return nil, err
+	// Skip ScaledObject lookup when KEDA is absent: its informer cannot sync
+	// without the CRD, so a cached Get would error.
+	var so *kedav1alpha1.ScaledObject
+	if l.kedaEnabled {
+		if so, err = l.getManagedScaledObject(ctx, namespace, variantName); err != nil {
+			return nil, err
+		}
 	}
 	switch {
 	case hpa != nil && so != nil:
@@ -153,9 +176,13 @@ func (l *podLocator) resolveScaler(ctx context.Context, target chainNode) (*Mana
 	if err != nil {
 		return nil, err
 	}
-	so, err := indexers.FindSOForScaleTarget(ctx, asClient(l.cached), ref, target.Namespace)
-	if err != nil {
-		return nil, err
+	// Skip ScaledObject lookup when KEDA is absent: the ScaledObject field index
+	// is not registered, so a MatchingFields List would error.
+	var so *kedav1alpha1.ScaledObject
+	if l.kedaEnabled {
+		if so, err = indexers.FindSOForScaleTarget(ctx, asClient(l.cached), ref, target.Namespace); err != nil {
+			return nil, err
+		}
 	}
 	switch {
 	case hpa != nil && so != nil:

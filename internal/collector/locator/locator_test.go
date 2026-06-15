@@ -48,6 +48,21 @@ func newClients(t *testing.T, objs ...runtime.Object) (cached, apiReader client.
 	return build(), build()
 }
 
+// newClientsNoSOIndex mimics a cluster without the KEDA CRD: the ScaledObject
+// field index is not registered, so any MatchingFields List against it would error.
+func newClientsNoSOIndex(t *testing.T, objs ...runtime.Object) (cached, apiReader client.Client) {
+	t.Helper()
+	scheme := newScheme(t)
+	build := func() client.Client {
+		return fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithRuntimeObjects(objs...).
+			WithIndex(&autoscalingv2.HorizontalPodAutoscaler{}, indexers.HPAByScaleTargetKey, indexers.HPAByScaleTargetIndexFunc).
+			Build()
+	}
+	return build(), build()
+}
+
 const testNamespace = "default"
 
 func TestLocate_DeploymentChainHitsManagedHPA(t *testing.T) {
@@ -257,5 +272,67 @@ func TestLocate_LWSChain(t *testing.T) {
 	got, err := loc.Locate(context.Background(), ns, "p")
 	if err != nil || got == nil || got.HPA == nil || got.HPA.Name != "h" {
 		t.Fatalf("got=%v err=%v", got, err)
+	}
+}
+
+// TestLocate_KEDADisabledSkipsScaledObject verifies that when KEDA is disabled the
+// locator does not touch the (unregistered) ScaledObject field index, so Locate
+// returns the managed HPA without erroring on the missing index.
+func TestLocate_KEDADisabledSkipsScaledObject(t *testing.T) {
+	locator.SetKEDAEnabled(false)
+	t.Cleanup(func() { locator.SetKEDAEnabled(true) })
+
+	ns := testNamespace
+	deploy := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "d", Namespace: ns, UID: "uid-d"}}
+	rs := &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "rs", Namespace: ns, UID: "uid-rs",
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: "d", UID: "uid-d", Controller: ptr.To(true)}}},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: ns,
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "rs", UID: "uid-rs", Controller: ptr.To(true)}}},
+	}
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{
+		ObjectMeta: metav1.ObjectMeta{Name: "h", Namespace: ns,
+			Annotations: map[string]string{"llm-d.ai/managed": "true"}},
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: "d"},
+			MaxReplicas:    5,
+		},
+	}
+	cached, apiReader := newClientsNoSOIndex(t, deploy, rs, pod, hpa)
+	loc, _ := locator.New(cached, apiReader)
+	got, err := loc.Locate(context.Background(), ns, "p")
+	if err != nil {
+		t.Fatalf("Locate: %v", err)
+	}
+	if got == nil || got.HPA == nil || got.HPA.Name != "h" {
+		t.Fatalf("got=%v, want HPA=h", got)
+	}
+}
+
+// TestLocateByVariant_KEDADisabledSkipsScaledObject verifies that LocateByVariant
+// skips the cached ScaledObject Get when KEDA is disabled, returning the HPA only.
+func TestLocateByVariant_KEDADisabledSkipsScaledObject(t *testing.T) {
+	locator.SetKEDAEnabled(false)
+	t.Cleanup(func() { locator.SetKEDAEnabled(true) })
+
+	ns := testNamespace
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{
+		ObjectMeta: metav1.ObjectMeta{Name: "v", Namespace: ns,
+			Annotations: map[string]string{"llm-d.ai/managed": "true"}},
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{APIVersion: "apps/v1", Kind: "Deployment", Name: "d"},
+			MaxReplicas:    1,
+		},
+	}
+	cached, apiReader := newClientsNoSOIndex(t, hpa)
+	loc, _ := locator.New(cached, apiReader)
+	got, err := loc.LocateByVariant(context.Background(), ns, "v")
+	if err != nil {
+		t.Fatalf("LocateByVariant: %v", err)
+	}
+	if got == nil || got.HPA == nil || got.HPA.Name != "v" {
+		t.Fatalf("got=%v, want HPA=v", got)
 	}
 }
