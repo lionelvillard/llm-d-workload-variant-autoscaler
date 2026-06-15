@@ -16,6 +16,8 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
 )
 
+const ns = "default"
+
 func newFakeReader(objs ...runtime.Object) *fake.ClientBuilder {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
@@ -24,7 +26,6 @@ func newFakeReader(objs ...runtime.Object) *fake.ClientBuilder {
 }
 
 func TestWalkOwnersUp_PodReplicaSetDeployment(t *testing.T) {
-	ns := "default"
 	deploy := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: "d", Namespace: ns, UID: "uid-d"},
 	}
@@ -72,7 +73,6 @@ func TestWalkOwnersUp_PodReplicaSetDeployment(t *testing.T) {
 
 // TestWalkOwnersUp_LWSLeaderPod covers Pod → StatefulSet(leader) → LeaderWorkerSet.
 func TestWalkOwnersUp_LWSLeaderPod(t *testing.T) {
-	ns := "default"
 	lws := &lwsv1.LeaderWorkerSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "lws", Namespace: ns, UID: "uid-lws"},
 	}
@@ -121,7 +121,6 @@ func TestWalkOwnersUp_LWSLeaderPod(t *testing.T) {
 // TestWalkOwnersUp_LWSWorkerPod covers the worker chain:
 // Pod → StatefulSet(worker) → Pod(leader) → StatefulSet(leader) → LeaderWorkerSet.
 func TestWalkOwnersUp_LWSWorkerPod(t *testing.T) {
-	ns := "default"
 	lws := &lwsv1.LeaderWorkerSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "lws", Namespace: ns, UID: "uid-lws"},
 	}
@@ -192,7 +191,6 @@ func TestWalkOwnersUp_LWSWorkerPod(t *testing.T) {
 }
 
 func TestWalkOwnersUp_StopsAtMaxDepth(t *testing.T) {
-	ns := "default"
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "p",
