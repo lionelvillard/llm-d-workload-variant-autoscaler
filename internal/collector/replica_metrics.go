@@ -58,6 +58,7 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/collector/source"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/config"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/controller/indexers"
 	saturation_v2 "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/engines/analyzers/saturation_v2"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
@@ -65,6 +66,7 @@ import (
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/saturation"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils/scaletarget"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 )
@@ -250,9 +252,26 @@ func (c *ReplicaMetricsCollector) buildInstanceKey(ctx context.Context, namespac
 		} else if ms != nil {
 			switch {
 			case ms.HPA != nil:
-				vaName = ms.HPA.Name
+				// Prefer the VA CRD name over the HPA name: for CRD-based setups (e.g.
+				// KServe) the VA name and HPA name differ, and metrics are keyed by VA
+				// name. Fall back to HPA name for annotation-based setups where no VA
+				// CRD exists and the synthetic VA is keyed by the scaler name.
+				if va, lookupErr := indexers.FindVAForScaleTarget(ctx, c.k8sClient, ms.HPA.Spec.ScaleTargetRef, namespace); lookupErr == nil && va != nil {
+					vaName = va.Name
+				} else {
+					vaName = ms.HPA.Name
+				}
 			case ms.ScaledObject != nil:
-				vaName = ms.ScaledObject.Name
+				soRef := autoscalingv2.CrossVersionObjectReference{
+					APIVersion: ms.ScaledObject.Spec.ScaleTargetRef.APIVersion,
+					Kind:       ms.ScaledObject.Spec.ScaleTargetRef.Kind,
+					Name:       ms.ScaledObject.Spec.ScaleTargetRef.Name,
+				}
+				if va, lookupErr := indexers.FindVAForScaleTarget(ctx, c.k8sClient, soRef, namespace); lookupErr == nil && va != nil {
+					vaName = va.Name
+				} else {
+					vaName = ms.ScaledObject.Name
+				}
 			}
 		}
 	}
