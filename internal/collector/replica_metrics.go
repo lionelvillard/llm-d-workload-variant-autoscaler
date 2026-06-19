@@ -246,11 +246,12 @@ func (c *ReplicaMetricsCollector) buildInstanceKey(ctx context.Context, namespac
 	vaName = labels[constants.VariantLabelPrometheusKey]
 	if vaName == "" && podName != "" && c.locator != nil {
 		ms, err := c.locator.Locate(ctx, namespace, podName)
-		if err != nil {
+		switch {
+		case err != nil:
 			ctrl.LoggerFrom(ctx).V(logging.DEBUG).Info("locator.Locate failed; treating pod as unmanaged",
 				"pod", podName, "namespace", namespace, "error", err)
-		} else if ms == nil {
-			// TODO(va-removal): delete this whole branch when the VariantAutoscaling
+		case ms == nil:
+			// TODO(va-removal): delete this whole case when the VariantAutoscaling
 			// CRD is removed. It exists only for the CRD-based dual-mode path; the
 			// locator's ResolveScaleTarget method added for it can also go.
 			//
@@ -268,7 +269,7 @@ func (c *ReplicaMetricsCollector) buildInstanceKey(ctx context.Context, namespac
 					vaName = va.Name
 				}
 			}
-		} else {
+		default:
 			switch {
 			case ms.HPA != nil:
 				// Prefer the VA CRD name over the HPA name: for CRD-based setups (e.g.
