@@ -43,5 +43,6 @@ change has no user-visible impact, no release note is needed.
 
 <!--
 :book: If this change has user-visible impact, link to an issue or PR in
-https://github.com/llm-d/llm-d.
+- https://github.com/llm-d/llm-d/tree/main/docs/architecture/advanced/autoscaling for user-facingdocumentation
+- https://github.com/llm-d/llm-d/tree/main/guides/workload-autoscaling for guides
 -->
