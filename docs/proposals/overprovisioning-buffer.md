@@ -1,7 +1,7 @@
-# Proposal: Overprovisioning buffer for fast scale-up (KEDA)
+# Proposal: Overprovisioning buffer via a buffer variant
 
 **Authors:** [TBD]
-**Status:** Draft (revised 2026-07-02 — KEDA-only)
+**Status:** Draft (revised 2026-07-02 — buffer-variant Deployment)
 **Created:** 2026-06-23
 **Last Updated:** 2026-07-02
 
@@ -11,123 +11,125 @@
 
 Model server cold start is slow — minutes, not seconds. When demand bursts, KEDA quickly computes the right replica count, but the new pods are not Ready in time. The burst is served by an undersized fleet and SLOs are missed before KEDA's decision can take effect.
 
-The scaler is doing its job; the bottleneck is pod startup latency. By the time a freshly requested replica has pulled its image, loaded model weights, and warmed its KV cache, the burst that justified it may already be over — and the requests that arrived in the meantime were served slowly or dropped.
+Operators today work around this by permanently over-provisioning with a high `minReplicaCount`. This wastes GPUs during steady state and does not adapt to where the spare capacity is actually needed.
 
-Operators today work around this by permanently over-provisioning: setting a high `minReplicaCount` so spare capacity is always running. This wastes GPUs during steady state and still does not adapt to where the spare capacity is actually needed.
-
-What is missing is a way to keep a small pool of **warm, Ready, fully initialized** model servers standing by — real pods that receive no traffic until the system saturates, at which point they can be promoted to serving in milliseconds instead of minutes.
+What is missing is a way to keep a small pool of **warm, Ready, fully initialized** model servers standing by — real pods that receive no traffic until the system saturates, at which point they can start serving in milliseconds instead of minutes.
 
 ### Where this fits
 
 ```
-       Prometheus                       +---------------+   reads same trigger
-  ------------------> KEDA ScaledObject | WVA buffer    | <-- (PromQL + threshold)
-   (trigger query)      |               | controller    |
-                        v               +---------------+
-                     scales Deployment          |
-                                                v
-                                    patch spec.minReplicaCount to A + B,
-                                    label pods active/buffer,
-                                    set pod-deletion-cost
+    Primary Deployment       Buffer Deployment
+    (KEDA-scaled)            (fixed replicas = N)
+        |                        |
+        +--- one InferencePool --+
+                    |
+                    v
+                   EPP
+             buffer-gate filter
+      (drops buffer endpoints unless primary is saturated)
 ```
 
-The `ScaledObject` is driven by whatever Prometheus query the operator already configured. This proposal does **not** introduce or depend on any WVA-produced scaling metric — WVA runs the same PromQL KEDA runs and compares against the same threshold. It adds a buffer of warm pods on top of KEDA's target, and a fast path to put those pods into service the moment they are needed.
+The primary variant is scaled by KEDA as it is today. The buffer variant is a **sibling Deployment** with the same PodSpec and a fixed replica count. Both variants share one `InferencePool`. A new **Filter plugin** in EPP excludes buffer endpoints from the candidate set unless the primary fleet is saturated — at which point buffer endpoints start receiving traffic within a single candidate-cache TTL (~50ms).
+
+Nothing in WVA runs at request time. Nothing in KEDA scales the buffer. Buffer refill on pod death is native Kubernetes.
 
 ---
 
 ## Goals
 
-1. Keep a configurable number of warm "buffer" pods over and above KEDA's honest target replica count.
-2. Hide buffer pods from EPP request routing so they receive no traffic until promoted.
-3. Promote a buffer pod to active in milliseconds when the system saturates.
-4. Scale down by terminating buffer pods first.
-5. Integrate with KEDA `ScaledObject` as the only supported scale target in v1.
+1. Keep a configurable number of warm buffer pods alongside the primary fleet.
+2. Hide buffer pods from routing until the primary fleet is saturated.
+3. Fail over in milliseconds when saturation is detected — the mechanism is EPP's routing decision, not a controller-driven label flip.
+4. Scale down cleanly: primary scales on its own KEDA metric; buffer holds at `N`.
+5. Integrate with KEDA `ScaledObject` on the primary. Buffer needs no scaler.
 6. No new CRDs. No changes to the deprecated `VariantAutoscaling` CRD.
-7. No changes to how KEDA is driven — the operator's existing Prometheus trigger and scaling pipeline keep working unchanged.
 
 ## Non-Goals
 
-- Direct `HorizontalPodAutoscaler` support (no KEDA). Deferred to a follow-up if there is demand.
-- Cross-pool / cross-variant orchestration.
-- Predictive promotion based on historical load.
-- A formal CRD for buffer policy.
-- Auto-tuning the buffer policy — the admin sets the min/percent/max bounds.
-- Solving metric dilution automatically (it becomes a documented configuration requirement; see Risks).
-- Coupling to any WVA scaling engine or analyzer — KEDA's own trigger metric is sufficient as the saturation signal.
+- Cross-pool / cross-model shared buffer pools.
+- Predictive buffer sizing.
+- Buffer pods on a different accelerator SKU than primary.
+- Auto-tuning `N`; the admin sets it.
+- Direct `HorizontalPodAutoscaler` support without KEDA.
 
 ---
 
 ## Proposed Solution
 
-The feature adds two cooperating responsibilities and stores all state in pod labels and annotations on the existing `ScaledObject` — no new Kubernetes objects.
+The feature is expressed in operator YAML and one EPP Filter plugin.
 
-- **WVA** owns all writes: it labels pods `active` or `buffer`, sets their deletion-cost annotations, and patches the `ScaledObject.spec.minReplicaCount` floor to keep buffer capacity provisioned.
-- **EPP (llm-d-router)** owns one filter: when enabled, it excludes pods labeled `llmd.ai/role=buffer` from routing candidates. Buffer pods stay warm but receive no traffic.
-
-A buffer pod is a real, Ready model server. Promotion is a single label flip — `buffer → active` — which EPP picks up on its next candidate-cache refresh (~50ms), versus minutes for a cold start.
+- **Operator** deploys a **buffer Deployment** — same PodSpec as primary, `spec.replicas=N`, no autoscaler — plus keeps a shared `InferencePool` whose selector matches both variants. Pods carry `llm-d.ai/variant=primary|buffer`.
+- **EPP** runs a new `buffergate` Filter plugin in the scheduling chain. It partitions endpoints by the variant label and admits buffer endpoints only when EPP's existing `SaturationDetector` (already used by flow-control admission) reports the primary sub-fleet as saturated.
+- **WVA has no runtime component** for this feature. Optional advisory webhook may warn on common misconfigurations but is not required.
 
 ### Concepts
 
-- **Active pod** — labeled `llmd.ai/role=active`. EPP routes requests to it.
-- **Buffer pod** — labeled `llmd.ai/role=buffer`. EPP excludes it from candidates.
-- **Active count (`A`)** — number of Ready `role=active` pods in the Deployment.
-- **Buffer target (`B`)** — number of Ready buffer pods to keep warm, computed from annotations.
-- **Scale target** — the KEDA `ScaledObject` that governs scaling. Buffer annotations and the `minReplicaCount` floor live here.
+- **Primary variant** — pods labeled `llm-d.ai/variant=primary` (or unlabeled). Scaled by the primary `ScaledObject`.
+- **Buffer variant** — pods labeled `llm-d.ai/variant=buffer`. Fixed `replicas=N` on the buffer Deployment. Never scaled by KEDA.
+- **Buffer-gate filter** — new EPP scheduling filter. Drops buffer endpoints unless primary saturation is detected.
 
 ### Configuration Surface
 
-Buffer policy is expressed as annotations on the `ScaledObject`:
+There is no controller configuration. The operator authors:
 
-| Annotation | Type | Default | Meaning |
-|---|---|---|---|
-| `llmd.ai/buffer-min` | non-negative int | `0` | Absolute floor for buffer count. |
-| `llmd.ai/buffer-percent` | non-negative int | `0` | Buffer as a percent of `A`. |
-| `llmd.ai/buffer-max` | non-negative int | unbounded | Absolute cap. |
-
-The effective buffer is `B = clamp(ceil(A * percent / 100), min, max)`. If all annotations are absent or zero, `B = 0` and the feature is off. A ScaledObject with no buffer annotations is ignored entirely — existing deployments see no behavior change.
-
-WVA also records the operator's original `minReplicaCount` in an `llmd.ai/user-min-replicas` annotation the first time it observes the target, so it never pushes the floor below the operator's intended minimum once it begins patching `min = max(user-min, A + B)`.
+1. A primary Deployment (existing).
+2. A primary `ScaledObject` (existing).
+3. A buffer Deployment (new, same PodSpec, `replicas=N`, `variant=buffer` label).
+4. An `InferencePool` selecting both variants via a shared label (e.g., `model=foo`).
+5. EPP config enabling the `buffergate` filter in the default scheduling profile.
 
 ### Behavior
 
-WVA keeps the buffer provisioned and reacts to saturation using **the same Prometheus trigger KEDA is already configured with**. It reads `spec.triggers[]` from the ScaledObject, executes the trigger's `query` against Prometheus at WVA's fast cadence, and compares to the trigger's `threshold`. `spec.advanced.scalingModifiers.formula` is supported in the Prometheus-only subset via the same `expr` library KEDA uses.
+- **Provision.** Kubernetes' Deployment controller keeps buffer at `N` pods, native semantics. WVA does not intervene.
+- **Route.** For each request, EPP's filter chain runs. Under normal load the buffer-gate filter removes buffer endpoints, so only primary pods receive traffic. When primary saturation is detected (per the existing `SaturationDetector`), the filter admits buffer endpoints and the scheduler routes to whichever pod is least loaded — typically a buffer pod.
+- **Refill.** Kubernetes handles it — a dead buffer pod is replaced by the Deployment controller. No demotion event exists.
+- **Scale down.** Primary scales down on its own KEDA metric. Buffer never scales.
 
-- **Provision.** WVA keeps `ScaledObject.spec.minReplicaCount = max(user-min, A + B)`, so KEDA always runs `B` warm pods beyond the active set. New pods are labeled `buffer` when first observed.
-- **Promote.** When the saturation ratio rises above `1 + tolerance` and a Ready buffer pod exists, WVA flips the oldest such pod to `active`. Promotion is immediate — the cost of one extra serving pod is small; the cost of being late is an SLO miss.
-- **Demote.** When the ratio stays below `1 - tolerance` for a sustained window (60s default), WVA flips the youngest active pod back to `buffer`. Demotion waits because flapping has real cost (label and candidate-set churn).
-- **Scale down.** Buffer pods carry a low `pod-deletion-cost`, so when KEDA removes replicas it terminates buffer pods first, preserving serving capacity.
+### Metric-dilution mitigation
 
-WVA yields when the ScaledObject is paused (via KEDA's `autoscaling.keda.sh/paused[-replicas]` annotations), and enters a signal-degraded state (no promotions or demotions, current floor held) when Prometheus is unreachable.
+Same problem as any variant-based routing: the primary's KEDA trigger PromQL must not include buffer pods. Three mitigations, ranked by generality:
+
+- **(a) PromQL label filter** — add `variant="primary"` to the trigger query. Works for the mainstream Prometheus setups (Prometheus Operator, `honor_labels` + relabel). Recommended default.
+- **(b) Separate PodMonitor per variant** — split at scrape time when raw metrics don't preserve pod labels. Backup.
+- **(c) Prometheus recording rule** — pre-aggregate to a variant-filtered stream. Requires operator control over Prometheus config.
+
+The spec documents (a) as default with concrete PromQL and (b) as documented backup.
 
 ### What Does NOT Change
 
-- KEDA is still driven by the operator's existing Prometheus trigger; this proposal adds no new scaling metric.
-- KEDA still performs the actual scaling via its generated HPA — WVA only patches the `spec.minReplicaCount` floor and labels pods.
-- EPP makes no change beyond the optional buffer filter — it writes no labels and needs no extra RBAC.
-- Existing deployments without buffer annotations behave identically to today.
+- KEDA still scales the primary Deployment based on the operator's trigger — no new metrics, no `minReplicaCount` writes.
+- No new CRDs. No new controllers in WVA. No new RBAC.
+- EPP's datastore stays single-pool. The buffer variant is inside the same pool, distinguished by a pod label — same shape as the existing `role`-based disaggregation.
+- Existing deployments without a buffer Deployment behave identically to today.
 
 ---
 
 ## Risks and Open Questions
 
-1. **Metric dilution.** If the trigger's PromQL averages across all pods in the Deployment, idle buffer pods drag the average down and KEDA under-scales. **Mitigation: the operator must filter the trigger's PromQL by `llmd.ai/role="active"`.** This is a documented requirement.
+1. **EPP filter must be enabled.** Without the `buffergate` filter, buffer endpoints receive traffic normally. Advisory webhook can warn; core feature depends on operator config.
 
-2. **EPP filter must be enabled.** If llm-d-router runs without buffer filtering, buffer pods receive traffic and the feature degrades silently. WVA surfaces a status condition asking the operator to confirm the filter is on.
+2. **Saturation semantics come from EPP.** The buffer-gate filter reuses whatever `SaturationDetector` the EPP is configured with (utilization or concurrency). WVA does not define its own saturation.
 
-3. **`pod-deletion-cost` is a hint, not a guarantee.** Kubernetes tries to honor it but is not required to. If an active pod is terminated anyway, WVA detects the gap and promotes a buffer pod to refill it — acceptable, self-healing degradation.
+3. **`SaturatedOver(subset)` interface method.** The existing detectors compute over the whole pool. The filter needs to compute over the primary sub-slice specifically — a small refactor extends the detector interface.
 
-4. **CRD-less coordination.** All state lives in pod labels, ScaledObject annotations, and the ScaledObject spec — no new etcd objects. This is the right tradeoff for v1 but limits introspection (no `kubectl get bufferpolicies`). A CRD may follow if usage demands it.
+4. **Same PodSpec constraint.** Buffer and primary must be interchangeable. Enforced by operator convention in v1.
 
-5. **Formula parity with KEDA.** For ScaledObjects that use `scalingModifiers`, WVA re-evaluates the formula itself using the same `expr` library KEDA uses, restricted to Prometheus-only triggers and pure numeric expressions. Non-Prometheus triggers referenced in the formula are unsupported in v1.
+5. **Two Deployments is a mild UX regression** vs. a single Deployment with role labels. Inherent — pods can't change owners. A future `BufferSpec` CRD could hide the dual-Deployment YAML behind one object.
+
+6. **Metric dilution.** If the operator forgets to filter the primary trigger PromQL by variant, KEDA under-scales. Documented; advisory webhook can warn.
 
 ---
 
 ## Alternatives Considered
 
-1. **Permanent over-provisioning via high `minReplicaCount`.** Simple, but wastes GPUs continuously and does not adapt to where spare capacity is needed. The buffer is bounded, promoted on demand, and terminated first on scale-down.
+1. **Label-flipping design (previous spec).** WVA labels pods `active`/`buffer`, patches `ScaledObject.spec.minReplicaCount`, runs promotion/demotion loops. Rejected as too complex: a new WVA controller, Prometheus polling inside WVA, a `pod-deletion-cost` state machine, and a `user-min-replicas` snapshot mechanism — all to move a label the operator could avoid by using a distinct Deployment.
 
-2. **A dedicated buffer-policy CRD.** Better introspection, but adds a new API surface, RBAC, and versioning burden. Annotations keep policy co-located with the scale target. May be reconsidered post-v1 if usage grows.
+2. **Formula-bias design (`scalingModifiers.formula` + N*T).** WVA rewrites the operator's KEDA formula so KEDA naturally provisions `N` extra pods. Removes WVA's Prometheus polling and the min-floor patch — but keeps the pod-labeling and promotion loop (otherwise the extra pods serve traffic and dilute the metric), and introduces a formula-drift failure mode on user edits. Modest simplification over the label-flipping design; strictly less elegant than the buffer-variant design.
 
-3. **Predictive promotion from historical load.** More powerful but far more complex and harder to reason about. The initial version reacts to the live saturation metric the operator already trusts for scaling.
+3. **Formula-bias without labels.** Same as above but drop the labels — buffer pods serve. Simplest to implement; forfeits the warm-standby property. The "buffer" is just dynamic overprovisioning that always serves traffic and pays the cold-start cost on the *next* burst.
 
-4. **Scale target abstraction (both HPA and KEDA).** Rejected for v1: KEDA already generates and owns the HPA, so supporting a standalone HPA path adds interface cost without matching user demand in the llm-d KEDA-based deployments.
+4. **Permanent over-provisioning via high `minReplicaCount`.** Simple, wastes GPUs continuously, no adaptivity.
+
+5. **Buffer as a shared pool across models.** Deferred — reintroduces cross-tenant interference and needs a real design pass on ownership.
+
+6. **Predictive promotion from historical load.** Deferred as more powerful but far more complex.
