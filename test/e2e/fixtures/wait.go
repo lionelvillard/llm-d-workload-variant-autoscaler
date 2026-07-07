@@ -12,7 +12,7 @@ import (
 
 	promoperator "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 
-	variantautoscalingv1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
+	variantautoscalingv1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/variant"
 )
 
 const defaultPollInterval = 500 * time.Millisecond

@@ -32,11 +32,11 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 
-	vav1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
 	poolreconciler "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/controller"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/datastore"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils/scaletarget"
+	vav1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/variant"
 	unittestutil "github.com/llm-d/llm-d-workload-variant-autoscaler/test/utils"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	ctrl "sigs.k8s.io/controller-runtime"

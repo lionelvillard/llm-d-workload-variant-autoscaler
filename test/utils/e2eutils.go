@@ -34,8 +34,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
+	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/variant"
 	gink "github.com/onsi/ginkgo/v2"
 	gom "github.com/onsi/gomega"
 	promoperator "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -824,7 +824,7 @@ func ValidateVariantAutoscalingUniqueness(namespace, modelId, acc string, crClie
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	variantAutoscalingList := &v1alpha1.VariantAutoscalingList{}
+	variantAutoscalingList := &variant.VariantAutoscalingList{}
 	err := crClient.List(ctx, variantAutoscalingList, client.InNamespace(namespace), client.MatchingLabels{"inference.optimization/acceleratorName": acc})
 	if err != nil {
 		gink.Fail(fmt.Sprintf("Failed to check existing VariantAutoscalings for accelerator label uniqueness: %v", err))
@@ -849,7 +849,7 @@ func ValidateVariantAutoscalingUniqueness(namespace, modelId, acc string, crClie
 
 // LogVariantAutoscalingStatus fetches and logs the status of the specified VariantAutoscaling resource
 func LogVariantAutoscalingStatus(ctx context.Context, vaName, namespace string, crClient client.Client, writer io.Writer) error {
-	variantAutoscaling := &v1alpha1.VariantAutoscaling{}
+	variantAutoscaling := &variant.VariantAutoscaling{}
 	err := crClient.Get(ctx, client.ObjectKey{Name: vaName, Namespace: namespace}, variantAutoscaling)
 	if err != nil {
 		return err
@@ -871,8 +871,8 @@ func LogVariantAutoscalingStatus(ctx context.Context, vaName, namespace string, 
 }
 
 // creates a VariantAutoscaling resource with owner reference to deployment
-func CreateVariantAutoscalingResource(namespace, resourceName, scaleTargetRefName, modelId, acc string, variantCost float64) *v1alpha1.VariantAutoscaling {
-	return &v1alpha1.VariantAutoscaling{
+func CreateVariantAutoscalingResource(namespace, resourceName, scaleTargetRefName, modelId, acc string, variantCost float64) *variant.VariantAutoscaling {
+	return &variant.VariantAutoscaling{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      resourceName,
 			Namespace: namespace,
@@ -880,14 +880,14 @@ func CreateVariantAutoscalingResource(namespace, resourceName, scaleTargetRefNam
 				"inference.optimization/acceleratorName": acc,
 			},
 		},
-		Spec: v1alpha1.VariantAutoscalingSpec{
+		Spec: variant.VariantAutoscalingSpec{
 			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
 				APIVersion: "apps/v1",
 				Kind:       "Deployment",
 				Name:       scaleTargetRefName,
 			},
 			ModelID: modelId,
-			VariantAutoscalingConfigSpec: v1alpha1.VariantAutoscalingConfigSpec{
+			VariantAutoscalingConfigSpec: variant.VariantAutoscalingConfigSpec{
 				VariantCost: fmt.Sprintf("%.1f", variantCost),
 			},
 		},
@@ -1325,7 +1325,7 @@ func SetupTestEnvironment(image string, numNodes, gpusPerNode int, gpuTypes stri
 // and waits for them to be fully removed. This is useful for ensuring a clean test state.
 // Returns the number of VAs that were deleted.
 func DeleteAllVariantAutoscalings(ctx context.Context, crClient client.Client, namespace string) (int, error) {
-	vaList := &v1alpha1.VariantAutoscalingList{}
+	vaList := &variant.VariantAutoscalingList{}
 	if err := crClient.List(ctx, vaList, client.InNamespace(namespace)); err != nil {
 		return 0, fmt.Errorf("failed to list VariantAutoscaling objects: %w", err)
 	}
@@ -1351,7 +1351,7 @@ func DeleteAllVariantAutoscalings(ctx context.Context, crClient client.Client, n
 	defer cancel()
 
 	err := wait.PollUntilContextTimeout(waitCtx, 2*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
-		remainingVAs := &v1alpha1.VariantAutoscalingList{}
+		remainingVAs := &variant.VariantAutoscalingList{}
 		if err := crClient.List(ctx, remainingVAs, client.InNamespace(namespace)); err != nil {
 			return false, err
 		}
