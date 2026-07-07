@@ -262,14 +262,6 @@ See [Testing Guide](testing.md) and [E2E Test Suite README](../../test/e2e/READM
 make manifests generate
 ```
 
-### Generate CRD Documentation
-
-```bash
-make crd-docs
-```
-
-Output will be in `docs/user-guide/crd-reference.md`.
-
 ## Debugging
 
 ### VSCode Launch Configuration
@@ -318,8 +310,7 @@ kubectl logs -n workload-variant-autoscaler-system \
 1. Modify `api/v1alpha1/variantautoscaling_types.go`
 2. Run `make manifests generate`
 3. Update tests
-4. Run `make crd-docs`
-5. Update user documentation
+4. Update user documentation
 
 ### Adding a New Metric
 
