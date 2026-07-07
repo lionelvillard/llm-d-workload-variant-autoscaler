@@ -720,33 +720,6 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
 
-CRD_REF_DOCS_BIN := $(shell go env GOPATH)/bin/crd-ref-docs
-CRD_SOURCE_PATH := ./api/v1alpha1
-CRD_CONFIG := ./hack/crd-doc-gen/config.yaml
-CRD_RENDERER := markdown
-CRD_OUTPUT := ./docs/user-guide/crd-reference.md
-
-.PHONY: crd-docs install-crd-ref-docs
-
-# Install crd-ref-docs if not already present
-install-crd-ref-docs:
-	@if [ ! -f "$(CRD_REF_DOCS_BIN)" ]; then \
-		echo "Installing crd-ref-docs..."; \
-		go install github.com/elastic/crd-ref-docs@latest; \
-	fi
-
-# Generate CRD documentation
-crd-docs: install-crd-ref-docs
-	$(CRD_REF_DOCS_BIN) \
-		--source-path=$(CRD_SOURCE_PATH) \
-		--config=$(CRD_CONFIG) \
-		--renderer=$(CRD_RENDERER)
-		# Fallback: if the tool produced out.md, rename it
-	@if [ -f ./out.md ]; then mv ./out.md $(CRD_OUTPUT); fi
-	@if [ -f ./docs/out.md ]; then mv ./docs/out.md $(CRD_OUTPUT); fi
-	@test -f $(CRD_OUTPUT) && echo "✅ CRD documentation generated at $(CRD_OUTPUT)" || \
-	 (echo "❌ Expected $(CRD_OUTPUT) not found. Check $(CRD_CONFIG) or tool output."; exit 1)
-
 .PHONY: setup-envtest
 setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
 	@echo "Setting up envtest binaries for Kubernetes version $(ENVTEST_K8S_VERSION)..."
