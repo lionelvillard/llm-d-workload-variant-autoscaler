@@ -66,10 +66,9 @@ var _ = BeforeSuite(func() {
 	logging.NewTestLogger()
 
 	By("bootstrapping test environment")
-	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "base", "crd")},
-		ErrorIfCRDPathMissing: true,
-	}
+	// No project CRDs are needed: these tests operate on built-in Deployments
+	// and pass in-memory VariantAutoscaling structs directly.
+	testEnv = &envtest.Environment{}
 
 	// Retrieve the first found binary directory to allow running tests from IDEs
 	if getFirstFoundEnvTestBinaryDir() != "" {

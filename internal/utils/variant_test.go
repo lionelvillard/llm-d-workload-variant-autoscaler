@@ -308,24 +308,35 @@ func TestAnnotationSourcedVariants(t *testing.T) {
 	})
 }
 
-func TestReadyVariantAutoscalingsMergePath(t *testing.T) {
+func TestReadyVariantAutoscalings(t *testing.T) {
 	ctx := context.Background()
 
-	makeCRDVA := func(ns, name, targetKind, targetName string) *wvav1alpha1.VariantAutoscaling {
-		return &wvav1alpha1.VariantAutoscaling{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
-			Spec: wvav1alpha1.VariantAutoscalingSpec{
-				ModelID:        "model-crd",
-				ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{Kind: targetKind, Name: targetName},
-			},
-		}
-	}
-
-	t.Run("CRD and annotation with different targets — both returned", func(t *testing.T) {
+	t.Run("annotated HPA yields a synthetic variant", func(t *testing.T) {
 		s := variantTestScheme(t)
 		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
-			makeCRDVA("ns1", "va-crd", "Deployment", "deploy-crd"),
-			managedHPA("ns2", "hpa-ann", "deploy-ann", "model-ann"),
+			managedHPA("ns1", "hpa-ann", "deploy-ann", "model-ann"),
+		).Build()
+
+		result, err := readyVariantAutoscalings(ctx, cl)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(result) != 1 {
+			t.Fatalf("want 1 annotation-sourced variant, got %d", len(result))
+		}
+		if result[0].Name != "hpa-ann" || result[0].Spec.ModelID != "model-ann" {
+			t.Errorf("unexpected synthetic variant: name=%q modelID=%q", result[0].Name, result[0].Spec.ModelID)
+		}
+		if !IsSynthetic(&result[0]) {
+			t.Error("want annotation-sourced variant to be marked synthetic")
+		}
+	})
+
+	t.Run("annotated HPA and ScaledObject with different targets — both returned", func(t *testing.T) {
+		s := variantTestScheme(t)
+		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
+			managedHPA("ns1", "hpa-ann", "deploy-hpa", "model-hpa"),
+			managedSO("ns2", "so-ann", "Deployment", "deploy-so", "model-so"),
 		).Build()
 
 		result, err := readyVariantAutoscalings(ctx, cl)
@@ -333,104 +344,15 @@ func TestReadyVariantAutoscalingsMergePath(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(result) != 2 {
-			t.Errorf("want 2 VAs, got %d", len(result))
+			t.Errorf("want 2 variants, got %d", len(result))
 		}
 	})
 
-	t.Run("VA CRD NoMatch still returns annotation-sourced variants", func(t *testing.T) {
-		s := variantTestScheme(t)
-		vaGK := schema.GroupKind{Group: wvav1alpha1.GroupVersion.Group, Kind: "VariantAutoscaling"}
-		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
-			managedHPA("ns1", "hpa-ann", "deploy-ann", "model-ann"),
-		).WithInterceptorFuncs(interceptor.Funcs{
-			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
-				if _, ok := list.(*wvav1alpha1.VariantAutoscalingList); ok {
-					return &apimeta.NoKindMatchError{GroupKind: vaGK}
-				}
-				return c.List(ctx, list, opts...)
-			},
-		}).Build()
-
-		result, err := readyVariantAutoscalings(ctx, cl)
-		if err != nil {
-			t.Fatalf("expected VA NoMatch to be non-fatal, got error: %v", err)
-		}
-		if len(result) != 1 {
-			t.Fatalf("want 1 annotation-sourced VA, got %d", len(result))
-		}
-		if result[0].Name != "hpa-ann" || result[0].Spec.ModelID != "model-ann" {
-			t.Errorf("unexpected synthetic VA: name=%q modelID=%q", result[0].Name, result[0].Spec.ModelID)
-		}
-		if !IsSynthetic(&result[0]) {
-			t.Error("want annotation-sourced VA to be marked synthetic")
-		}
-	})
-
-	t.Run("VA CRD non-NoMatch list error is returned", func(t *testing.T) {
-		s := variantTestScheme(t)
-		expectedErr := errors.New("api server unavailable")
-		cl := fake.NewClientBuilder().WithScheme(s).WithInterceptorFuncs(interceptor.Funcs{
-			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
-				if _, ok := list.(*wvav1alpha1.VariantAutoscalingList); ok {
-					return expectedErr
-				}
-				return c.List(ctx, list, opts...)
-			},
-		}).Build()
-
-		_, err := readyVariantAutoscalings(ctx, cl)
-		if !errors.Is(err, expectedErr) {
-			t.Fatalf("want non-NoMatch VA list error %v, got %v", expectedErr, err)
-		}
-	})
-
-	t.Run("CRD wins when same namespace/kind/name as annotation-sourced", func(t *testing.T) {
-		s := variantTestScheme(t)
-		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
-			makeCRDVA("ns1", "va-crd", "Deployment", "shared-deploy"),
-			managedHPA("ns1", "hpa-ann", "shared-deploy", "model-ann"),
-		).Build()
-
-		result, err := readyVariantAutoscalings(ctx, cl)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(result) != 1 {
-			t.Errorf("want 1 VA (CRD wins), got %d", len(result))
-		}
-		if result[0].Spec.ModelID != "model-crd" {
-			t.Errorf("want CRD VA to win, got modelID %q", result[0].Spec.ModelID)
-		}
-	})
-
-	t.Run("annotationSourcedVariants error is non-fatal — CRD-sourced still returned", func(t *testing.T) {
-		s := variantTestScheme(t)
-		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
-			makeCRDVA("ns1", "va-crd", "Deployment", "deploy-crd"),
-		).WithInterceptorFuncs(interceptor.Funcs{
-			List: func(ctx context.Context, c client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
-				// fail HPA listing to force annotationSourcedVariants to return an error
-				if _, ok := list.(*autoscalingv2.HorizontalPodAutoscalerList); ok {
-					return errors.New("hpa api unavailable")
-				}
-				return c.List(ctx, list, opts...)
-			},
-		}).Build()
-
-		result, err := readyVariantAutoscalings(ctx, cl)
-		if err != nil {
-			t.Fatalf("expected non-fatal path, got error: %v", err)
-		}
-		if len(result) != 1 || result[0].Name != "va-crd" {
-			t.Errorf("want 1 CRD VA, got %d VAs", len(result))
-		}
-	})
-
-	t.Run("no CRD VA, annotated HPA, KEDA listing fails — HPA VA still returned", func(t *testing.T) {
+	t.Run("annotated HPA, KEDA listing fails — HPA variant still returned", func(t *testing.T) {
 		// annotationSourcedVariants successfully lists the HPA but then fails listing
 		// ScaledObjects with a non-NoMatch error (e.g. transient API error).
-		// readyVariantAutoscalings logs the error as non-fatal and still merges the
-		// partial annotation results, so the HPA-sourced VA is returned.
+		// readyVariantAutoscalings logs the error as non-fatal and still returns the
+		// partial annotation results, so the HPA-sourced variant is returned.
 		s := variantTestScheme(t)
 		cl := fake.NewClientBuilder().WithScheme(s).WithObjects(
 			managedHPA("ns1", "hpa-ann", "deploy-ann", "model-ann"),
@@ -448,7 +370,7 @@ func TestReadyVariantAutoscalingsMergePath(t *testing.T) {
 			t.Fatalf("expected non-fatal path, got error: %v", err)
 		}
 		if len(result) != 1 {
-			t.Errorf("want 1 VA (HPA-sourced, KEDA error is non-fatal), got %d", len(result))
+			t.Errorf("want 1 variant (HPA-sourced, KEDA error is non-fatal), got %d", len(result))
 		}
 	})
 }
