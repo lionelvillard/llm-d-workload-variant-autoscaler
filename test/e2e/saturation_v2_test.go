@@ -74,14 +74,10 @@ var _ = Describe("Saturation V2 engine", Label("smoke", "full"), Ordered, func()
 		serviceName           = modelSvcName + "-service"
 		smName                = modelSvcName + "-monitor"
 
-		// scalerBaseName is the logical base for the annotated scaler; the
-		// scaler object name is scalerBaseName+"-hpa" for both backends.
+		// scalerBaseName is the logical base for the annotated scaler; the scaler
+		// object name is scalerBaseName+"-so" for KEDA and scalerBaseName+"-hpa"
+		// for the Prometheus-adapter backend.
 		scalerBaseName = "v2-smoke"
-		// variantName is the annotated scaler's object name. WVA uses it as the
-		// variant_name label on wva_desired_replicas, and the model-service pod
-		// template carries it as the llm-d.ai/variant label so the metric label
-		// lines up on both discovery paths.
-		variantName = scalerBaseName + "-hpa"
 	)
 
 	var (
@@ -91,6 +87,12 @@ var _ = Describe("Saturation V2 engine", Label("smoke", "full"), Ordered, func()
 		cmKey           string
 		cmOriginal      *corev1.ConfigMap
 		cmExistedBefore bool
+		// variantName is the annotated scaler's OBJECT name. WVA uses it as the
+		// variant_name label on wva_desired_replicas, and the model-service pod
+		// template carries it as the llm-d.ai/variant label so metric attribution
+		// lines up on both discovery paths. It is backend-specific, so it is set
+		// in BeforeAll.
+		variantName string
 	)
 
 	BeforeAll(func() {
@@ -109,6 +111,11 @@ var _ = Describe("Saturation V2 engine", Label("smoke", "full"), Ordered, func()
 		cmName = saturationConfigMapName()
 		cmNamespace = cfg.WVANamespace
 		cmKey = "default"
+		if cfg.ScalerBackend == scalerBackendKeda {
+			variantName = scalerBaseName + "-so"
+		} else {
+			variantName = scalerBaseName + "-hpa"
+		}
 
 		By("Snapshotting existing saturation ConfigMap for restore in AfterAll")
 		cm, err := k8sClient.CoreV1().ConfigMaps(cmNamespace).Get(ctx, cmName, metav1.GetOptions{})

@@ -324,12 +324,21 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			poolName         = "smoke-test-pool"
 			modelServiceName = "smoke-test-ms"
 			deploymentName   = modelServiceName + "-decode"
-			variantName      = "smoke-test-variant"
 			hpaName          = "smoke-test-hpa"
-			minReplicas      = int32(1) // Store minReplicas for stabilization check
+			// variantName is the annotated scaler's OBJECT name (hpaName+"-so" for
+			// KEDA, +"-hpa" for the adapter), stamped as the decode pods'
+			// llm-d.ai/variant label so metric attribution lines up. Set below.
+			variantName string
+			minReplicas = int32(1) // Store minReplicas for stabilization check
 		)
 
 		BeforeAll(func() {
+			if cfg.ScalerBackend == scalerBackendKeda {
+				variantName = hpaName + "-so"
+			} else {
+				variantName = hpaName + "-hpa"
+			}
+
 			By("Cleaning up any existing smoke test resources")
 			cleanupSmokeTestResources()
 
@@ -580,11 +589,20 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		var (
 			errorTestPoolName         = "error-test-pool"
 			errorTestModelServiceName = "error-test-ms"
-			errorTestVariantName      = "error-test-variant"
 			errorTestScalerBase       = "error-test-ms"
+			// errorTestVariantName is the annotated scaler's OBJECT name
+			// (base+"-so" for KEDA, +"-hpa" for the adapter), stamped as the decode
+			// pods' llm-d.ai/variant label for metric attribution. Set below.
+			errorTestVariantName string
 		)
 
 		BeforeAll(func() {
+			if cfg.ScalerBackend == scalerBackendKeda {
+				errorTestVariantName = errorTestScalerBase + "-so"
+			} else {
+				errorTestVariantName = errorTestScalerBase + "-hpa"
+			}
+
 			By("Cleaning up any existing smoke test resources")
 			cleanupSmokeTestResources()
 

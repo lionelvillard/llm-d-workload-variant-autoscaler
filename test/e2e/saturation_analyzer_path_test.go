@@ -137,14 +137,15 @@ var _ = Describe("Saturation analyzer path and status propagation", Label("full"
 		modelDecodeDeployment = modelSvcName + "-decode"
 		serviceName           = modelSvcName + "-service"
 		smName                = modelSvcName + "-monitor"
-		// vaName is the variant name: it is passed to the model service so the decode
-		// pods carry llm-d.ai/variant=<vaName>, and to the annotated scaler so the same
-		// value becomes the variant_name label on wva_desired_replicas.
-		vaName = "saturation-path-va"
-		// scalerBaseName is the annotated scaler's logical base; the HPA object (or the
-		// KEDA-managed HPA) is named scalerBaseName+"-hpa".
+		// scalerBaseName is the annotated scaler's logical base. WVA discovers the
+		// scaler and uses its OBJECT name as the variant_name label on
+		// wva_desired_replicas — that is base+"-so" for a KEDA ScaledObject and
+		// base+"-hpa" for an HPA. The decode pods must carry
+		// llm-d.ai/variant=<scaler object name> for metric attribution, so vaName is
+		// derived from the backend below.
 		scalerBaseName = "saturation-path"
 		hpaObjectName  = scalerBaseName + "-hpa"
+		soObjectName   = scalerBaseName + "-so"
 	)
 
 	var (
@@ -154,12 +155,22 @@ var _ = Describe("Saturation analyzer path and status propagation", Label("full"
 		cmExistedBefore bool
 		cmKey           string
 		cmNamespace     string
+		// vaName is the variant_name — the scaler's object name — stamped as the
+		// decode pods' llm-d.ai/variant label so the collector attributes their
+		// metrics to the variant. Set from the backend in BeforeAll.
+		vaName string
 	)
 
 	BeforeAll(func() {
 		if !cfg.UseSimulator {
 			Skip("This suite needs the simulator runtime: set USE_SIMULATOR=true. " +
 				"The suite uses llm-d-inference-sim's --fake-metrics flag, which real vLLM rejects.")
+		}
+
+		if cfg.ScalerBackend == scalerBackendKeda {
+			vaName = soObjectName
+		} else {
+			vaName = hpaObjectName
 		}
 
 		modelID = cfg.ModelID

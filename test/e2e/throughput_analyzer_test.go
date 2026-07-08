@@ -223,7 +223,6 @@ var _ = Describe("ThroughputAnalyzer wiring health check", Label("smoke", "throu
 		modelDecodeDeployment = modelSvcName + "-decode"
 		serviceName           = modelSvcName + "-service"
 		smName                = modelSvcName + "-monitor"
-		vaName                = "throughput-smoke-va"
 	)
 
 	var (
@@ -233,6 +232,9 @@ var _ = Describe("ThroughputAnalyzer wiring health check", Label("smoke", "throu
 		cmExistedBefore bool
 		cmKey           string
 		cmNamespace     string
+		// vaName is the variant_name — the annotated scaler's OBJECT name — stamped
+		// as the decode pods' llm-d.ai/variant label for metric attribution.
+		vaName string
 	)
 
 	BeforeAll(func() {
@@ -240,6 +242,11 @@ var _ = Describe("ThroughputAnalyzer wiring health check", Label("smoke", "throu
 		cmName = saturationConfigMapName()
 		cmNamespace = cfg.WVANamespace
 		cmKey = defaultConfigKey
+		if cfg.ScalerBackend == scalerBackendKeda {
+			vaName = modelSvcName + "-so"
+		} else {
+			vaName = modelSvcName + "-hpa"
+		}
 
 		cm, err := k8sClient.CoreV1().ConfigMaps(cmNamespace).Get(ctx, cmName, metav1.GetOptions{})
 		if err == nil {
@@ -364,7 +371,6 @@ var _ = Describe("Multi-analyzer engine scale-up (saturation-driven, throughput 
 		modelDecodeDeployment = modelSvcName + "-decode"
 		serviceName           = modelSvcName + "-service"
 		smName                = modelSvcName + "-monitor"
-		vaName                = "throughput-scaleup-va"
 		loadJobName           = "throughput-scaleup-load"
 	)
 
@@ -375,6 +381,11 @@ var _ = Describe("Multi-analyzer engine scale-up (saturation-driven, throughput 
 		cmExistedBefore bool
 		cmKey           string
 		cmNamespace     string
+		// vaName is the variant_name — the annotated scaler's OBJECT name
+		// (modelSvcName+"-so" for KEDA, +"-hpa" for the adapter) — stamped as the
+		// decode pods' llm-d.ai/variant label so the collector attributes their
+		// metrics to the variant. Set from the backend below.
+		vaName string
 	)
 
 	BeforeAll(func() {
@@ -382,6 +393,11 @@ var _ = Describe("Multi-analyzer engine scale-up (saturation-driven, throughput 
 		cmName = saturationConfigMapName()
 		cmNamespace = cfg.WVANamespace
 		cmKey = defaultConfigKey
+		if cfg.ScalerBackend == scalerBackendKeda {
+			vaName = modelSvcName + "-so"
+		} else {
+			vaName = modelSvcName + "-hpa"
+		}
 
 		cm, err := k8sClient.CoreV1().ConfigMaps(cmNamespace).Get(ctx, cmName, metav1.GetOptions{})
 		if err == nil {
@@ -485,7 +501,6 @@ var _ = Describe("ThroughputAnalyzer TA-only mode", Label("full", "throughput"),
 		modelDecodeDeployment = modelSvcName + "-decode"
 		serviceName           = modelSvcName + "-service"
 		smName                = modelSvcName + "-monitor"
-		vaName                = "throughput-taonly-va"
 		loadJobName           = "throughput-taonly-load"
 	)
 
@@ -496,6 +511,9 @@ var _ = Describe("ThroughputAnalyzer TA-only mode", Label("full", "throughput"),
 		cmExistedBefore bool
 		cmKey           string
 		cmNamespace     string
+		// vaName is the variant_name — the annotated scaler's OBJECT name — stamped
+		// as the decode pods' llm-d.ai/variant label for metric attribution.
+		vaName string
 	)
 
 	BeforeAll(func() {
@@ -503,6 +521,11 @@ var _ = Describe("ThroughputAnalyzer TA-only mode", Label("full", "throughput"),
 		cmName = saturationConfigMapName()
 		cmNamespace = cfg.WVANamespace
 		cmKey = defaultConfigKey
+		if cfg.ScalerBackend == scalerBackendKeda {
+			vaName = modelSvcName + "-so"
+		} else {
+			vaName = modelSvcName + "-hpa"
+		}
 
 		cm, err := k8sClient.CoreV1().ConfigMaps(cmNamespace).Get(ctx, cmName, metav1.GetOptions{})
 		if err == nil {
