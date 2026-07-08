@@ -30,7 +30,7 @@ import (
 	infextv1alpha2 "sigs.k8s.io/gateway-api-inference-extension/apix/v1alpha2"
 	lwsv1 "sigs.k8s.io/lws/api/leaderworkerset/v1"
 
-	variantautoscalingv1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
+	variantautoscalingv1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/variant"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/test/utils"
 	// +kubebuilder:scaffold:imports
 )

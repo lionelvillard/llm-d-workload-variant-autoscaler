@@ -15,12 +15,12 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	llmdVariantAutoscalingV1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/api/v1alpha1"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
 	interfaces "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/interfaces"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/logging"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/resources"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/utils/scaletarget"
+	llmdVariantAutoscalingV1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/variant"
 	infernoConfig "github.com/llm-d/llm-d-workload-variant-autoscaler/pkg/config"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/yaml.v3"
