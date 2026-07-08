@@ -16,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
-	variantautoscalingv1alpha1 "github.com/llm-d/llm-d-workload-variant-autoscaler/internal/variant"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/test/e2e/fixtures"
 )
 
@@ -33,17 +32,6 @@ func cleanupSmokeTestResources() {
 	// Helper to check if resource name matches smoke test patterns
 	isSmokeTestResource := func(name string) bool {
 		return strings.HasPrefix(name, "smoke-test-") || strings.HasPrefix(name, "error-test-")
-	}
-
-	// Delete all VariantAutoscalings with smoke-test prefix
-	vaList := &variantautoscalingv1alpha1.VariantAutoscalingList{}
-	if err := crClient.List(ctx, vaList, client.InNamespace(cfg.LLMDNamespace)); err == nil {
-		for _, va := range vaList.Items {
-			if isSmokeTestResource(va.Name) {
-				GinkgoWriter.Printf("  Deleting VA: %s\n", va.Name)
-				_ = crClient.Delete(ctx, &va)
-			}
-		}
 	}
 
 	// Delete all HPAs with smoke-test prefix
@@ -200,7 +188,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		var (
 			primaryNamespace   = "llm-d-sim"
 			secondaryNamespace = "llm-d-sim-mt"
-			sharedVAName       = "smoke-test-mt-shared-va"
+			sharedVariantName  = "smoke-test-mt-shared-variant"
 			primaryHPAName     = "smoke-test-mt-primary-hpa"
 			secondaryHPAName   = "smoke-test-mt-secondary-hpa"
 			primaryModelName   = "smoke-test-mt-primary-ms"
@@ -233,68 +221,44 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				})
 			})
 
-			By("Creating model services in both namespaces with overlapping VA name")
-			err = fixtures.EnsureModelService(ctx, k8sClient, primaryNamespace, primaryModelName, poolName, cfg.ModelID, sharedVAName, cfg.UseSimulator, cfg.MaxNumSeqs)
+			By("Creating model services in both namespaces with overlapping variant name")
+			err = fixtures.EnsureModelService(ctx, k8sClient, primaryNamespace, primaryModelName, poolName, cfg.ModelID, sharedVariantName, cfg.UseSimulator, cfg.MaxNumSeqs)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create primary model service")
 			err = fixtures.EnsureService(ctx, k8sClient, primaryNamespace, primaryModelName, primaryModelName+"-decode", 8000)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create primary model service Service")
 			err = fixtures.EnsureServiceMonitor(ctx, crClient, cfg.MonitoringNS, primaryNamespace, primaryModelName, primaryModelName+"-decode")
 			Expect(err).NotTo(HaveOccurred(), "Failed to create primary ServiceMonitor")
 
-			err = fixtures.EnsureModelService(ctx, k8sClient, secondaryNamespace, secondaryModelName, poolName, cfg.ModelID, sharedVAName, cfg.UseSimulator, cfg.MaxNumSeqs)
+			err = fixtures.EnsureModelService(ctx, k8sClient, secondaryNamespace, secondaryModelName, poolName, cfg.ModelID, sharedVariantName, cfg.UseSimulator, cfg.MaxNumSeqs)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create secondary model service")
 			err = fixtures.EnsureService(ctx, k8sClient, secondaryNamespace, secondaryModelName, secondaryModelName+"-decode", 8000)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create secondary model service Service")
 			err = fixtures.EnsureServiceMonitor(ctx, crClient, cfg.MonitoringNS, secondaryNamespace, secondaryModelName, secondaryModelName+"-decode")
 			Expect(err).NotTo(HaveOccurred(), "Failed to create secondary ServiceMonitor")
 
-			By("Creating overlapping VariantAutoscaling names in both namespaces")
-			err = fixtures.EnsureVariantAutoscalingWithDefaults(ctx, crClient, primaryNamespace, sharedVAName, primaryModelName+"-decode", cfg.ModelID, "H100", "")
-			Expect(err).NotTo(HaveOccurred(), "Failed to create primary VariantAutoscaling")
-			err = fixtures.EnsureVariantAutoscalingWithDefaults(ctx, crClient, secondaryNamespace, sharedVAName, secondaryModelName+"-decode", cfg.ModelID, "H100", "")
-			Expect(err).NotTo(HaveOccurred(), "Failed to create secondary VariantAutoscaling")
-
-			By("Creating HPAs in both namespaces for the shared VA name")
-			err = fixtures.EnsureHPA(ctx, k8sClient, primaryNamespace, primaryHPAName, primaryModelName+"-decode", sharedVAName, 1, 10)
+			By("Creating annotated HPAs in both namespaces for the shared variant name (discovery source + scaler)")
+			err = fixtures.EnsureHPA(ctx, k8sClient, primaryNamespace, primaryHPAName, primaryModelName+"-decode", sharedVariantName, 1, 10,
+				fixtures.WithWVAAnnotations(cfg.ModelID, "30.0"))
 			Expect(err).NotTo(HaveOccurred(), "Failed to create primary HPA")
-			err = fixtures.EnsureHPA(ctx, k8sClient, secondaryNamespace, secondaryHPAName, secondaryModelName+"-decode", sharedVAName, 1, 10)
+			err = fixtures.EnsureHPA(ctx, k8sClient, secondaryNamespace, secondaryHPAName, secondaryModelName+"-decode", sharedVariantName, 1, 10,
+				fixtures.WithWVAAnnotations(cfg.ModelID, "30.0"))
 			Expect(err).NotTo(HaveOccurred(), "Failed to create secondary HPA")
 		})
 
 		It("should return exactly one external metric item when exported_namespace is selected", func() {
-			By("Waiting for both VAs to be reconciled")
+			By("Waiting for wva_desired_replicas to be emitted for both namespaces")
 			Eventually(func(g Gomega) {
-				primaryVA := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err := crClient.Get(ctx, client.ObjectKey{Name: sharedVAName, Namespace: primaryNamespace}, primaryVA)
-				g.Expect(err).NotTo(HaveOccurred())
-				primaryCondition := variantautoscalingv1alpha1.GetCondition(primaryVA, variantautoscalingv1alpha1.TypeTargetResolved)
-				g.Expect(primaryCondition).NotTo(BeNil())
-				g.Expect(primaryCondition.Status).To(Equal(metav1.ConditionTrue))
-
-				secondaryVA := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err = crClient.Get(ctx, client.ObjectKey{Name: sharedVAName, Namespace: secondaryNamespace}, secondaryVA)
-				g.Expect(err).NotTo(HaveOccurred())
-				secondaryCondition := variantautoscalingv1alpha1.GetCondition(secondaryVA, variantautoscalingv1alpha1.TypeTargetResolved)
-				g.Expect(secondaryCondition).NotTo(BeNil())
-				g.Expect(secondaryCondition.Status).To(Equal(metav1.ConditionTrue))
+				for _, ns := range []string{primaryNamespace, secondaryNamespace} {
+					raw, err := k8sClient.RESTClient().
+						Get().
+						AbsPath("/apis/external.metrics.k8s.io/v1beta1/namespaces/"+ns+"/"+constants.WVADesiredReplicas).
+						Param("labelSelector", "variant_name="+sharedVariantName+",exported_namespace="+ns).
+						DoRaw(ctx)
+					g.Expect(err).NotTo(HaveOccurred(), "External metrics API query should succeed for %s", ns)
+					g.Expect(strings.Contains(string(raw), `"items":[]`)).To(BeFalse(),
+						"wva_desired_replicas should be emitted for namespace %s", ns)
+				}
 			}, time.Duration(cfg.EventuallyLongSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
-
-			By("Waiting for Prometheus-backed metrics on both VAs (HPA/external-metrics need this)")
-			Eventually(func(g Gomega) {
-				primaryVA := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err := crClient.Get(ctx, client.ObjectKey{Name: sharedVAName, Namespace: primaryNamespace}, primaryVA)
-				g.Expect(err).NotTo(HaveOccurred())
-				mc := variantautoscalingv1alpha1.GetCondition(primaryVA, variantautoscalingv1alpha1.TypeMetricsAvailable)
-				g.Expect(mc).NotTo(BeNil())
-				g.Expect(mc.Status).To(Equal(metav1.ConditionTrue))
-
-				secondaryVA := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err = crClient.Get(ctx, client.ObjectKey{Name: sharedVAName, Namespace: secondaryNamespace}, secondaryVA)
-				g.Expect(err).NotTo(HaveOccurred())
-				mc = variantautoscalingv1alpha1.GetCondition(secondaryVA, variantautoscalingv1alpha1.TypeMetricsAvailable)
-				g.Expect(mc).NotTo(BeNil())
-				g.Expect(mc.Status).To(Equal(metav1.ConditionTrue))
-			}, time.Duration(cfg.EventuallyExtendedSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 
 			By("Querying external metrics API with explicit namespace-aware label selector")
 			var metricList externalMetricValueList
@@ -302,13 +266,13 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				raw, err := k8sClient.RESTClient().
 					Get().
 					AbsPath("/apis/external.metrics.k8s.io/v1beta1/namespaces/"+primaryNamespace+"/"+constants.WVADesiredReplicas).
-					Param("labelSelector", "variant_name="+sharedVAName+",exported_namespace="+primaryNamespace).
+					Param("labelSelector", "variant_name="+sharedVariantName+",exported_namespace="+primaryNamespace).
 					DoRaw(ctx)
 				g.Expect(err).NotTo(HaveOccurred(), "External metrics API query should succeed")
 				g.Expect(json.Unmarshal(raw, &metricList)).To(Succeed(), "Should decode external metric response")
 				g.Expect(metricList.Items).To(HaveLen(1), "Expected exactly one metric series for selected namespace and variant")
 				g.Expect(metricList.Items[0].MetricLabels["exported_namespace"]).To(Equal(primaryNamespace))
-				g.Expect(metricList.Items[0].MetricLabels["variant_name"]).To(Equal(sharedVAName))
+				g.Expect(metricList.Items[0].MetricLabels["variant_name"]).To(Equal(sharedVariantName))
 			}, time.Duration(cfg.EventuallyLongSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 
 			By("Verifying both HPAs report active metric scaling")
@@ -348,12 +312,12 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		})
 	})
 
-	Context("Basic VA lifecycle", Serial, Ordered, func() {
+	Context("Basic scaler lifecycle", Serial, Ordered, func() {
 		var (
 			poolName         = "smoke-test-pool"
 			modelServiceName = "smoke-test-ms"
 			deploymentName   = modelServiceName + "-decode"
-			vaName           = "smoke-test-va"
+			variantName      = "smoke-test-variant"
 			hpaName          = "smoke-test-hpa"
 			minReplicas      = int32(1) // Store minReplicas for stabilization check
 		)
@@ -363,7 +327,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			cleanupSmokeTestResources()
 
 			By("Creating model service deployment")
-			err := fixtures.EnsureModelService(ctx, k8sClient, cfg.LLMDNamespace, modelServiceName, poolName, cfg.ModelID, vaName, cfg.UseSimulator, cfg.MaxNumSeqs)
+			err := fixtures.EnsureModelService(ctx, k8sClient, cfg.LLMDNamespace, modelServiceName, poolName, cfg.ModelID, variantName, cfg.UseSimulator, cfg.MaxNumSeqs)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create model service")
 
 			// Register cleanup for deployment (runs even if test fails)
@@ -424,31 +388,24 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				g.Expect(deployment.Status.ReadyReplicas).To(Equal(int32(1)), "Model service should have 1 ready replica")
 			}, time.Duration(cfg.PodReadyTimeout)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 
-			By("Creating VariantAutoscaling resource")
-			err = fixtures.EnsureVariantAutoscalingWithDefaults(
-				ctx, crClient, cfg.LLMDNamespace, vaName,
-				deploymentName, cfg.ModelID, cfg.AcceleratorType,
-				cfg.ControllerInstance,
-			)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create VariantAutoscaling")
-
-			By("Creating scaler for the deployment (HPA or ScaledObject per backend)")
+			By("Creating annotated scaler for the deployment (discovery source + scaler; HPA or ScaledObject per backend)")
 			if cfg.ScaleToZeroEnabled {
 				minReplicas = 0
 			}
 			if cfg.ScalerBackend == scalerBackendKeda {
 				_ = k8sClient.AutoscalingV2().HorizontalPodAutoscalers(cfg.LLMDNamespace).Delete(ctx, hpaName+"-hpa", metav1.DeleteOptions{})
-				err = fixtures.EnsureScaledObject(ctx, crClient, cfg.LLMDNamespace, hpaName, deploymentName, vaName, minReplicas, 10, cfg.MonitoringNS)
+				err = fixtures.EnsureScaledObject(ctx, crClient, cfg.LLMDNamespace, hpaName, deploymentName, variantName, minReplicas, 10, cfg.MonitoringNS,
+					fixtures.WithScaledObjectWVAAnnotations(cfg.ModelID, "30.0"))
 				Expect(err).NotTo(HaveOccurred(), "Failed to create ScaledObject")
 			} else {
-				err = fixtures.EnsureHPA(ctx, k8sClient, cfg.LLMDNamespace, hpaName, deploymentName, vaName, minReplicas, 10)
+				err = fixtures.EnsureHPA(ctx, k8sClient, cfg.LLMDNamespace, hpaName, deploymentName, variantName, minReplicas, 10,
+					fixtures.WithWVAAnnotations(cfg.ModelID, "30.0"))
 				Expect(err).NotTo(HaveOccurred(), "Failed to create HPA")
 			}
 		})
 
 		AfterAll(func() {
 			By("Cleaning up test resources")
-			// Delete in reverse dependency order: scaler (HPA or ScaledObject) -> VA
 			// Load Job, Service, Deployment, and ServiceMonitor cleanup is handled by DeferCleanup registered in BeforeAll and test
 
 			if cfg.ScalerBackend == scalerBackendKeda {
@@ -465,136 +422,61 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 						return errors.IsNotFound(err)
 					})
 			}
-
-			// Delete VA
-			va := &variantautoscalingv1alpha1.VariantAutoscaling{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      vaName,
-					Namespace: cfg.LLMDNamespace,
-				},
-			}
-			cleanupResource(ctx, "VA", cfg.LLMDNamespace, vaName,
-				func() error {
-					return crClient.Delete(ctx, va)
-				},
-				func() bool {
-					err := crClient.Get(ctx, client.ObjectKey{Name: vaName, Namespace: cfg.LLMDNamespace}, va)
-					return errors.IsNotFound(err)
-				})
 		})
 
-		It("should reconcile the VA successfully", func() {
-			By("Checking VA status conditions")
-			Eventually(func(g Gomega) {
-				va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err := crClient.Get(ctx, client.ObjectKey{
-					Name:      vaName,
-					Namespace: cfg.LLMDNamespace,
-				}, va)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(va.Status.Conditions).NotTo(BeEmpty(), "VA should have status conditions")
-
-				// Check for TargetResolved condition
-				targetResolved := false
-				for _, cond := range va.Status.Conditions {
-					if cond.Type == variantautoscalingv1alpha1.TypeTargetResolved && cond.Status == metav1.ConditionTrue {
-						targetResolved = true
-						break
-					}
-				}
-				g.Expect(targetResolved).To(BeTrue(), "VA should have TargetResolved=True condition")
-			}).Should(Succeed())
-		})
-
-		It("should expose external metrics for the VA", func() {
-			By("Waiting for VA to be reconciled (TargetResolved condition)")
-			Eventually(func(g Gomega) {
-				va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err := crClient.Get(ctx, client.ObjectKey{
-					Name:      vaName,
-					Namespace: cfg.LLMDNamespace,
-				}, va)
-				g.Expect(err).NotTo(HaveOccurred())
-				// Verify VA is reconciled (has TargetResolved condition)
-				condition := variantautoscalingv1alpha1.GetCondition(va, variantautoscalingv1alpha1.TypeTargetResolved)
-				g.Expect(condition).NotTo(BeNil(), "VA should have TargetResolved condition")
-				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue), "TargetResolved should be True")
-			}).Should(Succeed())
-
+		It("should expose wva_desired_replicas for the annotated scaler", func() {
+			// WVA discovers the variant from the annotated scaler and emits
+			// wva_desired_replicas. We observe that through the scaler surface:
+			// for KEDA via the managed HPA's CurrentMetrics, for the Prometheus
+			// Adapter backend via the external metrics API.
 			if cfg.ScalerBackend == scalerBackendKeda {
-				By("Verifying ScaledObject exists (KEDA backend; external metric name is KEDA-generated)")
+				By("Verifying ScaledObject exists (KEDA backend)")
 				soName := hpaName + "-so"
 				so := &unstructured.Unstructured{}
 				so.SetAPIVersion("keda.sh/v1alpha1")
 				so.SetKind("ScaledObject")
 				err := crClient.Get(ctx, client.ObjectKey{Namespace: cfg.LLMDNamespace, Name: soName}, so)
 				Expect(err).NotTo(HaveOccurred(), "ScaledObject %s should exist", soName)
+
+				By("Verifying KEDA has read wva_desired_replicas from Prometheus")
+				Eventually(func(g Gomega) {
+					hpaList, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(cfg.LLMDNamespace).List(ctx, metav1.ListOptions{})
+					g.Expect(err).NotTo(HaveOccurred())
+					var kedaHPA *autoscalingv2.HorizontalPodAutoscaler
+					for i := range hpaList.Items {
+						if hpaList.Items[i].Spec.ScaleTargetRef.Name == deploymentName {
+							kedaHPA = &hpaList.Items[i]
+							break
+						}
+					}
+					g.Expect(kedaHPA).NotTo(BeNil(), "KEDA should have created an HPA for the deployment")
+					g.Expect(kedaHPA.Status.CurrentMetrics).NotTo(BeEmpty(),
+						"KEDA HPA should have CurrentMetrics populated, indicating wva_desired_replicas was read from Prometheus")
+				}, time.Duration(cfg.EventuallyLongSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 			} else {
 				By("Querying external metrics API for wva_desired_replicas")
-				// Note: The metric may not exist until Engine has run and emitted metrics to Prometheus,
-				// which Prometheus Adapter then queries. This can take time.
-				result, err := k8sClient.RESTClient().
-					Get().
-					AbsPath("/apis/external.metrics.k8s.io/v1beta1/namespaces/" + cfg.LLMDNamespace + "/" + constants.WVADesiredReplicas).
-					DoRaw(ctx)
-				if err != nil {
-					if errors.IsNotFound(err) {
-						GinkgoWriter.Printf("External metrics API is accessible, but metric %s doesn't exist yet (Engine may not have run)\n", constants.WVADesiredReplicas)
-						_, discoveryErr := k8sClient.Discovery().ServerResourcesForGroupVersion("external.metrics.k8s.io/v1beta1")
-						Expect(discoveryErr).NotTo(HaveOccurred(), "External metrics API should be accessible")
-					} else {
-						Expect(err).NotTo(HaveOccurred(), "Should be able to query external metrics API")
+				// Note: The metric may not exist until the Engine has run and emitted metrics to
+				// Prometheus, which Prometheus Adapter then queries. This can take time.
+				Eventually(func(g Gomega) {
+					result, err := k8sClient.RESTClient().
+						Get().
+						AbsPath("/apis/external.metrics.k8s.io/v1beta1/namespaces/" + cfg.LLMDNamespace + "/" + constants.WVADesiredReplicas).
+						DoRaw(ctx)
+					if err != nil {
+						if errors.IsNotFound(err) {
+							// API accessible but metric not yet emitted — engine may not have ticked
+							_, discoveryErr := k8sClient.Discovery().ServerResourcesForGroupVersion("external.metrics.k8s.io/v1beta1")
+							g.Expect(discoveryErr).NotTo(HaveOccurred(), "External metrics API should be accessible")
+							return
+						}
+						g.Expect(err).NotTo(HaveOccurred())
 					}
-				} else {
-					if strings.Contains(string(result), `"items":[]`) {
-						GinkgoWriter.Printf("External metrics API is accessible, but metric %s doesn't exist yet (Engine may not have run)\n", constants.WVADesiredReplicas)
-						_, discoveryErr := k8sClient.Discovery().ServerResourcesForGroupVersion("external.metrics.k8s.io/v1beta1")
-						Expect(discoveryErr).NotTo(HaveOccurred(), "External metrics API should be accessible")
-					} else {
-						Expect(string(result)).To(ContainSubstring(constants.WVADesiredReplicas), "Metric response should contain metric name")
-						GinkgoWriter.Printf("External metrics API returned metric: %s\n", constants.WVADesiredReplicas)
+					if !strings.Contains(string(result), `"items":[]`) {
+						g.Expect(string(result)).To(ContainSubstring(constants.WVADesiredReplicas))
+						GinkgoWriter.Printf("wva_desired_replicas emitted for annotated HPA %s\n", hpaName+"-hpa")
 					}
-				}
+				}, time.Duration(cfg.EventuallyLongSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 			}
-
-			By("Verifying DesiredOptimizedAlloc is eventually populated (if Engine has run)")
-			// This is a best-effort check - DesiredOptimizedAlloc is populated by the Engine
-			// which may not run immediately. We check if it's populated, but don't fail if it's not yet.
-			va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-			getErr := crClient.Get(ctx, client.ObjectKey{
-				Name:      vaName,
-				Namespace: cfg.LLMDNamespace,
-			}, va)
-			Expect(getErr).NotTo(HaveOccurred())
-			if va.Status.DesiredOptimizedAlloc.Accelerator != "" {
-				// If populated, verify it's valid
-				Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).NotTo(BeNil(),
-					"If DesiredOptimizedAlloc is populated, NumReplicas should be set")
-				Expect(*va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">=", 0),
-					"If DesiredOptimizedAlloc is populated, NumReplicas should be >= 0")
-			} else {
-				// If not populated yet, that's okay - Engine may not have run yet
-				GinkgoWriter.Printf("DesiredOptimizedAlloc not yet populated (Engine may not have run yet)\n")
-			}
-		})
-
-		It("should have MetricsAvailable condition set when pods are ready", func() {
-			By("Waiting for MetricsAvailable condition to be set")
-			Eventually(func(g Gomega) {
-				va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err := crClient.Get(ctx, client.ObjectKey{
-					Name:      vaName,
-					Namespace: cfg.LLMDNamespace,
-				}, va)
-				g.Expect(err).NotTo(HaveOccurred())
-
-				condition := variantautoscalingv1alpha1.GetCondition(va, variantautoscalingv1alpha1.TypeMetricsAvailable)
-				g.Expect(condition).NotTo(BeNil(), "MetricsAvailable condition should exist")
-				// MetricsAvailable can be True (metrics found) or False (metrics missing/stale)
-				// For smoke tests, we just verify the condition exists and has a valid status
-				g.Expect(condition.Status).To(BeElementOf(metav1.ConditionTrue, metav1.ConditionFalse),
-					"MetricsAvailable condition should have a valid status")
-			}, time.Duration(cfg.EventuallyLongSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 		})
 
 		It("should have scaling controlled by backend", func() {
@@ -667,48 +549,23 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		})
 
 		It("should collect saturation metrics without triggering scale-up", func() {
-			By("Verifying VA is reconciled and has conditions")
-			Eventually(func(g Gomega) {
-				va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err := crClient.Get(ctx, client.ObjectKey{
-					Name:      vaName,
-					Namespace: cfg.LLMDNamespace,
-				}, va)
+			By("Recording the deployment's current replica count")
+			deployment, err := k8sClient.AppsV1().Deployments(cfg.LLMDNamespace).Get(ctx, deploymentName, metav1.GetOptions{})
+			Expect(err).NotTo(HaveOccurred(), "Deployment should exist")
+			baselineReplicas := int32(1)
+			if deployment.Spec.Replicas != nil {
+				baselineReplicas = *deployment.Spec.Replicas
+			}
+
+			By("Verifying the deployment stays at its current replica count (no scale-up without load)")
+			// Smoke tests apply no load, so the annotated scaler must not scale the
+			// deployment above its baseline replica count.
+			Consistently(func(g Gomega) {
+				d, err := k8sClient.AppsV1().Deployments(cfg.LLMDNamespace).Get(ctx, deploymentName, metav1.GetOptions{})
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(va.Status.Conditions).NotTo(BeEmpty(), "VA should have status conditions")
-			}).Should(Succeed())
-
-			By("Verifying MetricsAvailable condition indicates metrics collection")
-			va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-			err := crClient.Get(ctx, client.ObjectKey{
-				Name:      vaName,
-				Namespace: cfg.LLMDNamespace,
-			}, va)
-			Expect(err).NotTo(HaveOccurred())
-
-			condition := variantautoscalingv1alpha1.GetCondition(va, variantautoscalingv1alpha1.TypeMetricsAvailable)
-			// For smoke tests, we verify the condition exists
-			// In ideal case, it should be True with ReasonMetricsFound, but False is also valid
-			// if metrics are temporarily unavailable (smoke tests don't apply load)
-			Expect(condition).NotTo(BeNil(), "MetricsAvailable condition should exist")
-			if condition.Status == metav1.ConditionTrue {
-				Expect(condition.Reason).To(Equal(variantautoscalingv1alpha1.ReasonMetricsFound),
-					"When metrics are available, reason should be MetricsFound")
-			}
-
-			By("Checking if DesiredOptimizedAlloc is populated (best-effort)")
-			// DesiredOptimizedAlloc is populated by the Engine, which may not run immediately
-			// This is a best-effort check - we verify it's valid if populated, but don't fail if not
-			if va.Status.DesiredOptimizedAlloc.Accelerator != "" {
-				Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).NotTo(BeNil(),
-					"If DesiredOptimizedAlloc is populated, NumReplicas should be set")
-				Expect(*va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">=", 0),
-					"If DesiredOptimizedAlloc is populated, NumReplicas should be >= 0")
-				GinkgoWriter.Printf("DesiredOptimizedAlloc is populated: accelerator=%s, replicas=%d\n",
-					va.Status.DesiredOptimizedAlloc.Accelerator, *va.Status.DesiredOptimizedAlloc.NumReplicas)
-			} else {
-				GinkgoWriter.Printf("DesiredOptimizedAlloc not yet populated (Engine may not have run yet)\n")
-			}
+				g.Expect(d.Status.Replicas).To(BeNumerically("<=", baselineReplicas),
+					"Deployment should not scale up beyond baseline (%d) without applied load", baselineReplicas)
+			}, time.Duration(cfg.EventuallyShortSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 		})
 	})
 
@@ -716,7 +573,8 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		var (
 			errorTestPoolName         = "error-test-pool"
 			errorTestModelServiceName = "error-test-ms"
-			errorTestVAName           = "error-test-va"
+			errorTestVariantName      = "error-test-variant"
+			errorTestScalerBase       = "error-test-ms"
 		)
 
 		BeforeAll(func() {
@@ -726,7 +584,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			deploymentName := errorTestModelServiceName + "-decode"
 
 			By("Creating model service deployment for error handling tests")
-			err := fixtures.EnsureModelService(ctx, k8sClient, cfg.LLMDNamespace, errorTestModelServiceName, errorTestPoolName, cfg.ModelID, errorTestVAName, cfg.UseSimulator, cfg.MaxNumSeqs)
+			err := fixtures.EnsureModelService(ctx, k8sClient, cfg.LLMDNamespace, errorTestModelServiceName, errorTestPoolName, cfg.ModelID, errorTestVariantName, cfg.UseSimulator, cfg.MaxNumSeqs)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create model service")
 
 			// Register cleanup for deployment
@@ -748,43 +606,36 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				g.Expect(deployment.Status.ReadyReplicas).To(Equal(int32(1)), "Model service should have 1 ready replica")
 			}, time.Duration(cfg.PodReadyTimeout)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 
-			By("Creating VariantAutoscaling resource")
-			err = fixtures.EnsureVariantAutoscalingWithDefaults(
-				ctx, crClient, cfg.LLMDNamespace, errorTestVAName,
-				deploymentName, cfg.ModelID, cfg.AcceleratorType,
-				cfg.ControllerInstance,
-			)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create VariantAutoscaling")
-
-			By("Waiting for VA to reconcile initially")
-			Eventually(func(g Gomega) {
-				va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err := crClient.Get(ctx, client.ObjectKey{
-					Name:      errorTestVAName,
-					Namespace: cfg.LLMDNamespace,
-				}, va)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(va.Status.Conditions).NotTo(BeEmpty(), "VA should have status conditions")
-			}).Should(Succeed())
-		})
-
-		AfterAll(func() {
-			By("Cleaning up error handling test resources")
-			va := &variantautoscalingv1alpha1.VariantAutoscaling{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      errorTestVAName,
-					Namespace: cfg.LLMDNamespace,
-				},
-			}
-			cleanupResource(ctx, "VA", cfg.LLMDNamespace, errorTestVAName,
-				func() error {
-					return crClient.Delete(ctx, va)
-				},
-				func() bool {
-					err := crClient.Get(ctx, client.ObjectKey{Name: errorTestVAName, Namespace: cfg.LLMDNamespace}, va)
-					return errors.IsNotFound(err)
+			By("Creating annotated scaler (discovery source + scaler)")
+			if cfg.ScalerBackend == scalerBackendKeda {
+				_ = k8sClient.AutoscalingV2().HorizontalPodAutoscalers(cfg.LLMDNamespace).Delete(ctx, errorTestScalerBase+"-hpa", metav1.DeleteOptions{})
+				err = fixtures.EnsureScaledObject(ctx, crClient, cfg.LLMDNamespace, errorTestScalerBase, deploymentName, errorTestVariantName, 1, 10, cfg.MonitoringNS,
+					fixtures.WithScaledObjectWVAAnnotations(cfg.ModelID, "30.0"))
+				Expect(err).NotTo(HaveOccurred(), "Failed to create ScaledObject")
+				DeferCleanup(func() { _ = fixtures.DeleteScaledObject(ctx, crClient, cfg.LLMDNamespace, errorTestScalerBase) })
+			} else {
+				err = fixtures.EnsureHPA(ctx, k8sClient, cfg.LLMDNamespace, errorTestScalerBase, deploymentName, errorTestVariantName, 1, 10,
+					fixtures.WithWVAAnnotations(cfg.ModelID, "30.0"))
+				Expect(err).NotTo(HaveOccurred(), "Failed to create HPA")
+				DeferCleanup(func() {
+					_ = k8sClient.AutoscalingV2().HorizontalPodAutoscalers(cfg.LLMDNamespace).Delete(ctx, errorTestScalerBase+"-hpa", metav1.DeleteOptions{})
 				})
+			}
 		})
+
+		// scalerExists verifies the annotated scaler (HPA or ScaledObject) is still present.
+		scalerExists := func(g Gomega) {
+			if cfg.ScalerBackend == scalerBackendKeda {
+				so := &unstructured.Unstructured{}
+				so.SetAPIVersion("keda.sh/v1alpha1")
+				so.SetKind("ScaledObject")
+				err := crClient.Get(ctx, client.ObjectKey{Namespace: cfg.LLMDNamespace, Name: errorTestScalerBase + "-so"}, so)
+				g.Expect(err).NotTo(HaveOccurred(), "ScaledObject should still exist")
+			} else {
+				_, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(cfg.LLMDNamespace).Get(ctx, errorTestScalerBase+"-hpa", metav1.GetOptions{})
+				g.Expect(err).NotTo(HaveOccurred(), "HPA should still exist")
+			}
+		}
 
 		It("should handle deployment deletion gracefully", func() {
 			deploymentName := errorTestModelServiceName + "-decode"
@@ -804,21 +655,13 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "Error should be NotFound")
 			}, time.Duration(cfg.EventuallyShortSec)*time.Second, time.Duration(cfg.PollIntervalQuickSec)*time.Second).Should(Succeed())
 
-			By("Verifying VA continues to exist after deployment deletion")
-			// The VA should continue to exist even when the deployment is deleted
-			va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-			err = crClient.Get(ctx, client.ObjectKey{
-				Name:      errorTestVAName,
-				Namespace: cfg.LLMDNamespace,
-			}, va)
-			Expect(err).NotTo(HaveOccurred(), "VA should continue to exist after deployment deletion")
-
-			// Note: The controller may not immediately detect deployment deletion due to caching.
-			// This spec focuses on delete/recreate resilience (VA stays, TargetResolved recovers).
-			// An explicit TargetResolved=False assertion on a permanently missing target is optional coverage.
+			By("Verifying the annotated scaler continues to exist after deployment deletion")
+			// The scaler (discovery source) should survive the target deployment being deleted;
+			// WVA must degrade gracefully rather than remove the scaler.
+			scalerExists(Default)
 
 			By("Recreating the deployment")
-			err = fixtures.EnsureModelService(ctx, k8sClient, cfg.LLMDNamespace, errorTestModelServiceName, errorTestPoolName, cfg.ModelID, errorTestVAName, cfg.UseSimulator, cfg.MaxNumSeqs)
+			err = fixtures.EnsureModelService(ctx, k8sClient, cfg.LLMDNamespace, errorTestModelServiceName, errorTestPoolName, cfg.ModelID, errorTestVariantName, cfg.UseSimulator, cfg.MaxNumSeqs)
 			Expect(err).NotTo(HaveOccurred(), "Failed to recreate model service")
 
 			By("Waiting for deployment to be created and progressing")
@@ -838,76 +681,42 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 					"Model service should have 1 ready replica after recreation")
 			}, time.Duration(cfg.EventuallyExtendedSec)*time.Second, time.Duration(cfg.PollIntervalSlowSec)*time.Second).Should(Succeed())
 
-			By("Verifying VA automatically resumes operation")
+			By("Verifying the annotated scaler automatically resumes operation")
+			// After the target is recreated, WVA should re-discover the variant and the
+			// scaler should still be present and consuming wva_desired_replicas.
 			Eventually(func(g Gomega) {
-				va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err := crClient.Get(ctx, client.ObjectKey{
-					Name:      errorTestVAName,
-					Namespace: cfg.LLMDNamespace,
-				}, va)
-				g.Expect(err).NotTo(HaveOccurred())
-
-				condition := variantautoscalingv1alpha1.GetCondition(va, variantautoscalingv1alpha1.TypeTargetResolved)
-				g.Expect(condition).NotTo(BeNil(), "TargetResolved condition should exist")
-				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue),
-					"TargetResolved should be True when deployment is recreated")
-			}).Should(Succeed())
+				scalerExists(g)
+			}, time.Duration(cfg.EventuallyLongSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 		})
 
 		It("should handle metrics unavailability gracefully", func() {
-			By("Verifying MetricsAvailable condition exists and reflects metrics state")
+			By("Verifying the annotated scaler remains stable when metrics may be unavailable")
+			// Smoke tests apply no load and don't guarantee fresh metrics; WVA must keep
+			// the scaler in place and degrade gracefully rather than crash or remove it.
 			Eventually(func(g Gomega) {
-				va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-				err := crClient.Get(ctx, client.ObjectKey{
-					Name:      errorTestVAName,
-					Namespace: cfg.LLMDNamespace,
-				}, va)
+				scalerExists(g)
+			}, time.Duration(cfg.EventuallyLongSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
+
+			By("Verifying the WVA controller stays running")
+			Eventually(func(g Gomega) {
+				pods, err := k8sClient.CoreV1().Pods(cfg.WVANamespace).List(ctx, metav1.ListOptions{
+					LabelSelector: "control-plane=controller-manager",
+				})
 				g.Expect(err).NotTo(HaveOccurred())
-
-				condition := variantautoscalingv1alpha1.GetCondition(va, variantautoscalingv1alpha1.TypeMetricsAvailable)
-				g.Expect(condition).NotTo(BeNil(), "MetricsAvailable condition should exist")
-
-				// MetricsAvailable can be True or False depending on metrics availability
-				// The important thing is that the condition exists and has a valid reason
-				switch condition.Status {
-				case metav1.ConditionFalse:
-					// If metrics are unavailable, reason should indicate why
-					g.Expect(condition.Reason).To(BeElementOf(
-						variantautoscalingv1alpha1.ReasonMetricsMissing,
-						variantautoscalingv1alpha1.ReasonMetricsStale,
-						variantautoscalingv1alpha1.ReasonPrometheusError,
-						variantautoscalingv1alpha1.ReasonMetricsUnavailable,
-					), "When metrics are unavailable, reason should indicate the cause")
-				case metav1.ConditionTrue:
-					// If metrics are available, reason should be MetricsFound
-					g.Expect(condition.Reason).To(Equal(variantautoscalingv1alpha1.ReasonMetricsFound),
-						"When metrics are available, reason should be MetricsFound")
+				readyPods := 0
+				for _, pod := range pods.Items {
+					if pod.Status.Phase == corev1.PodRunning {
+						for _, condition := range pod.Status.Conditions {
+							if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+								readyPods++
+								break
+							}
+						}
+					}
 				}
+				g.Expect(readyPods).To(BeNumerically(">", 0),
+					"WVA controller should stay ready even when metrics are unavailable")
 			}).Should(Succeed())
-
-			By("Verifying VA continues to reconcile even if metrics are temporarily unavailable")
-			// The VA should continue to reconcile and have status conditions even if metrics are unavailable
-			va := &variantautoscalingv1alpha1.VariantAutoscaling{}
-			err := crClient.Get(ctx, client.ObjectKey{
-				Name:      errorTestVAName,
-				Namespace: cfg.LLMDNamespace,
-			}, va)
-			Expect(err).NotTo(HaveOccurred())
-			// VA should have status conditions (indicating it's reconciling)
-			Expect(va.Status.Conditions).NotTo(BeEmpty(),
-				"VA should have status conditions even if metrics are unavailable")
-			// DesiredOptimizedAlloc may not be populated if Engine hasn't run due to missing metrics
-			// This is acceptable - the important thing is that the VA continues to reconcile
-			if va.Status.DesiredOptimizedAlloc.Accelerator != "" {
-				// If populated, verify it's valid
-				Expect(va.Status.DesiredOptimizedAlloc.NumReplicas).NotTo(BeNil(),
-					"If DesiredOptimizedAlloc is populated, NumReplicas should be set")
-				Expect(*va.Status.DesiredOptimizedAlloc.NumReplicas).To(BeNumerically(">=", 0),
-					"If DesiredOptimizedAlloc is populated, NumReplicas should be >= 0")
-			} else {
-				// If not populated, that's okay - Engine may not have run yet
-				GinkgoWriter.Printf("DesiredOptimizedAlloc not yet populated (Engine may not have run due to missing metrics)\n")
-			}
 		})
 	})
 })
