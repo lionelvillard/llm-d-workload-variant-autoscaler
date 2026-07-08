@@ -188,9 +188,12 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		var (
 			primaryNamespace   = "llm-d-sim"
 			secondaryNamespace = "llm-d-sim-mt"
-			sharedVariantName  = "smoke-test-mt-shared-variant"
-			primaryHPAName     = "smoke-test-mt-primary-hpa"
-			secondaryHPAName   = "smoke-test-mt-secondary-hpa"
+			// Both namespaces use the SAME scaler base name so the discovered
+			// variant_name (the HPA object name, <base>-hpa) is identical across
+			// namespaces — the overlapping-name scenario this test isolates by
+			// exported_namespace. HPA names only need to be unique within a namespace.
+			sharedHPABase      = "smoke-test-mt-shared"
+			sharedVariantName  = sharedHPABase + "-hpa" // WVA emits variant_name = HPA object name
 			primaryModelName   = "smoke-test-mt-primary-ms"
 			secondaryModelName = "smoke-test-mt-secondary-ms"
 			poolName           = "smoke-test-mt-pool"
@@ -236,11 +239,15 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 			err = fixtures.EnsureServiceMonitor(ctx, crClient, cfg.MonitoringNS, secondaryNamespace, secondaryModelName, secondaryModelName+"-decode")
 			Expect(err).NotTo(HaveOccurred(), "Failed to create secondary ServiceMonitor")
 
-			By("Creating annotated HPAs in both namespaces for the shared variant name (discovery source + scaler)")
-			err = fixtures.EnsureHPA(ctx, k8sClient, primaryNamespace, primaryHPAName, primaryModelName+"-decode", sharedVariantName, 1, 10,
+			By("Creating annotated HPAs in both namespaces with the same base name (overlapping variant name)")
+			// Both HPAs share sharedHPABase, so each is named sharedVariantName within
+			// its namespace and WVA emits wva_desired_replicas{variant_name=sharedVariantName}
+			// for both — isolated only by exported_namespace. The vaName arg wires the
+			// HPA's own external-metric selector to the same variant_name/namespace.
+			err = fixtures.EnsureHPA(ctx, k8sClient, primaryNamespace, sharedHPABase, primaryModelName+"-decode", sharedVariantName, 1, 10,
 				fixtures.WithWVAAnnotations(cfg.ModelID, "30.0"))
 			Expect(err).NotTo(HaveOccurred(), "Failed to create primary HPA")
-			err = fixtures.EnsureHPA(ctx, k8sClient, secondaryNamespace, secondaryHPAName, secondaryModelName+"-decode", sharedVariantName, 1, 10,
+			err = fixtures.EnsureHPA(ctx, k8sClient, secondaryNamespace, sharedHPABase, secondaryModelName+"-decode", sharedVariantName, 1, 10,
 				fixtures.WithWVAAnnotations(cfg.ModelID, "30.0"))
 			Expect(err).NotTo(HaveOccurred(), "Failed to create secondary HPA")
 		})
@@ -277,7 +284,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 
 			By("Verifying both HPAs report active metric scaling")
 			Eventually(func(g Gomega) {
-				hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(primaryNamespace).Get(ctx, primaryHPAName+"-hpa", metav1.GetOptions{})
+				hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(primaryNamespace).Get(ctx, sharedHPABase+"-hpa", metav1.GetOptions{})
 				g.Expect(err).NotTo(HaveOccurred())
 				var scalingActive *autoscalingv2.HorizontalPodAutoscalerCondition
 				for i := range hpa.Status.Conditions {
@@ -287,14 +294,14 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 					}
 				}
 				if scalingActive == nil || scalingActive.Status != corev1.ConditionTrue {
-					GinkgoWriter.Printf("primary HPA %s/%s conditions: %+v\n", primaryNamespace, primaryHPAName+"-hpa", hpa.Status.Conditions)
+					GinkgoWriter.Printf("primary HPA %s/%s conditions: %+v\n", primaryNamespace, sharedHPABase+"-hpa", hpa.Status.Conditions)
 				}
 				g.Expect(scalingActive).NotTo(BeNil(), "Primary HPA should report ScalingActive condition")
 				g.Expect(scalingActive.Status).To(Equal(corev1.ConditionTrue), "Primary HPA should have external metric available")
 			}, time.Duration(cfg.EventuallyExtendedSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 
 			Eventually(func(g Gomega) {
-				hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(secondaryNamespace).Get(ctx, secondaryHPAName+"-hpa", metav1.GetOptions{})
+				hpa, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(secondaryNamespace).Get(ctx, sharedHPABase+"-hpa", metav1.GetOptions{})
 				g.Expect(err).NotTo(HaveOccurred())
 				var scalingActive *autoscalingv2.HorizontalPodAutoscalerCondition
 				for i := range hpa.Status.Conditions {
@@ -304,7 +311,7 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 					}
 				}
 				if scalingActive == nil || scalingActive.Status != corev1.ConditionTrue {
-					GinkgoWriter.Printf("secondary HPA %s/%s conditions: %+v\n", secondaryNamespace, secondaryHPAName+"-hpa", hpa.Status.Conditions)
+					GinkgoWriter.Printf("secondary HPA %s/%s conditions: %+v\n", secondaryNamespace, sharedHPABase+"-hpa", hpa.Status.Conditions)
 				}
 				g.Expect(scalingActive).NotTo(BeNil(), "Secondary HPA should report ScalingActive condition")
 				g.Expect(scalingActive.Status).To(Equal(corev1.ConditionTrue), "Secondary HPA should have external metric available")
