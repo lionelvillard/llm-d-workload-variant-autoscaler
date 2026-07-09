@@ -761,6 +761,10 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 // should retry via Eventually).
 func wvaDesiredReplicasFor(g Gomega, namespace, variantName, scaleTargetDeployment string) (int64, bool) {
 	if cfg.ScalerBackend == scalerBackendKeda {
+		// KEDA generates its own HPA (targeting the Deployment) and reports the
+		// current wva_desired_replicas reading in Status.CurrentMetrics. Despite the
+		// ScaledObject trigger declaring metricType "Value", the generated HPA
+		// surfaces the reading under AverageValue, so accept either field.
 		hpaList, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(ctx, metav1.ListOptions{})
 		g.Expect(err).NotTo(HaveOccurred())
 		for i := range hpaList.Items {
@@ -768,8 +772,14 @@ func wvaDesiredReplicasFor(g Gomega, namespace, variantName, scaleTargetDeployme
 				continue
 			}
 			for _, m := range hpaList.Items[i].Status.CurrentMetrics {
-				if m.External != nil && m.External.Current.Value != nil {
-					return m.External.Current.Value.Value(), true
+				if m.External == nil {
+					continue
+				}
+				if v := m.External.Current.Value; v != nil {
+					return v.Value(), true
+				}
+				if av := m.External.Current.AverageValue; av != nil {
+					return av.Value(), true
 				}
 			}
 		}

@@ -470,7 +470,7 @@ var _ = Describe("Multi-analyzer engine scale-up (saturation-driven, throughput 
 		_ = k8sClient.AppsV1().Deployments(cfg.LLMDNamespace).Delete(ctx, modelDecodeDeployment, metav1.DeleteOptions{})
 	})
 
-	It("scales up above MinReplicas with both analyzers enabled", func() {
+	It("raises wva_desired_replicas above MinReplicas with both analyzers enabled", func() {
 		// Faked kv-cache-usage=0.9 > scaleUpThreshold=0.85 makes the saturation analyzer
 		// deterministically recommend scale-up above MinReplicas=1. Post-CRD-removal the
 		// desired count is no longer surfaced in VA status; the annotated scaler consumes

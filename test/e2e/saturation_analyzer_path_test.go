@@ -360,7 +360,7 @@ var _ = Describe("Saturation analyzer path and status propagation", Label("full"
 		}, time.Duration(cfg.EventuallyMediumSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 	})
 
-	It("crosses V1 threshold with bounded requests and scales the target deployment up", func() {
+	It("crosses V1 threshold with bounded requests and raises wva_desired_replicas", func() {
 		var baseline int32
 
 		By("Capturing baseline target deployment replicas before scale-up trigger")
