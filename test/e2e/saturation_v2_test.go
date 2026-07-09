@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
@@ -264,15 +266,11 @@ var _ = Describe("Saturation V2 engine", Label("smoke", "full"), Ordered, func()
 	// scaler driving the Deployment above a single replica.
 	It("should recommend scale-up when token utilization crosses scaleUpThreshold", func() {
 		By("Asserting WVA raises wva_desired_replicas above 1")
-		// The V2 scale-up recommendation is surfaced as the wva_desired_replicas
-		// value (formerly VariantAutoscaling.Status.DesiredOptimizedAlloc). Assert on
-		// that rather than the actual Deployment replica count, which depends on the
-		// separate KEDA/HPA actuation loop.
+		// The V2 scale-up recommendation is surfaced via wva_desired_replicas
+		// (formerly VariantAutoscaling.Status.DesiredOptimizedAlloc), decoupled from
+		// the separate scaler actuation loop.
 		Eventually(func(g Gomega) {
-			desired, ok := wvaDesiredReplicasFor(g, cfg.LLMDNamespace, variantName, modelDecodeDeployment)
-			g.Expect(ok).To(BeTrue(), "wva_desired_replicas should be available for %s", variantName)
-			g.Expect(desired).To(BeNumerically(">", int64(1)),
-				"V2 should raise wva_desired_replicas above 1 when fake kv-cache-usage is above scaleUpThreshold")
+			expectWVARaisesDesiredReplicas(g, cfg.LLMDNamespace, variantName, modelDecodeDeployment, 1)
 		}, time.Duration(cfg.ScaleUpTimeout)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).
 			Should(Succeed())
 	})
@@ -305,13 +303,33 @@ var _ = Describe("Saturation V2 engine", Label("smoke", "full"), Ordered, func()
 		)
 		Expect(upsertSaturationConfigEntry(ctx, cmNamespace, cmName, cmKey, cfgYAML)).To(Succeed())
 
+		// The exact scale-down target (== 1) is only observable via the Prometheus
+		// Adapter's external-metrics API, which surfaces the gauge value faithfully.
+		// KEDA's emulated HPA does not expose a reliable numeric value (it reports
+		// the reading as 0 even when Prometheus holds the real value), so the strict
+		// floor assertion is not portable to that backend.
+		if cfg.ScalerBackend == scalerBackendKeda {
+			Skip("Exact wva_desired_replicas scale-down value is not observable via KEDA's HPA; " +
+				"covered by the Prometheus-adapter backend")
+		}
+
 		By("Asserting WVA drops wva_desired_replicas to the minReplicas floor (1)")
-		// Reflects the engine's scale-down recommendation, decoupled from KEDA/HPA
-		// actuation.
+		// Reflects the engine's scale-down recommendation, decoupled from scaler actuation.
 		Eventually(func(g Gomega) {
-			desired, ok := wvaDesiredReplicasFor(g, cfg.LLMDNamespace, variantName, modelDecodeDeployment)
-			g.Expect(ok).To(BeTrue(), "wva_desired_replicas should be available for %s", variantName)
-			g.Expect(desired).To(Equal(int64(1)),
+			raw, err := k8sClient.RESTClient().
+				Get().
+				AbsPath("/apis/external.metrics.k8s.io/v1beta1/namespaces/"+cfg.LLMDNamespace+"/"+constants.WVADesiredReplicas).
+				Param("labelSelector", "variant_name="+variantName+",exported_namespace="+cfg.LLMDNamespace).
+				DoRaw(ctx)
+			if err != nil {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+			var list externalMetricValueList
+			g.Expect(json.Unmarshal(raw, &list)).To(Succeed())
+			g.Expect(list.Items).NotTo(BeEmpty(), "wva_desired_replicas should be available for %s", variantName)
+			q, perr := resource.ParseQuantity(list.Items[0].Value)
+			g.Expect(perr).NotTo(HaveOccurred())
+			g.Expect(q.Value()).To(Equal(int64(1)),
 				"V2 should drop wva_desired_replicas to 1 (MinReplicas floor) when load is below scaleDownBoundary")
 		}, time.Duration(cfg.ScaleUpTimeout)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).
 			Should(Succeed())

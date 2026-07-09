@@ -748,42 +748,40 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 	})
 })
 
-// wvaDesiredReplicasFor returns the current wva_desired_replicas value WVA has
-// emitted for the given variant, as observed at the scaler surface — decoupled
-// from whether KEDA/HPA has actually resized the Deployment yet. This mirrors the
-// pre-CRD-removal assertion on VariantAutoscaling.Status.DesiredOptimizedAlloc.
+// expectWVARaisesDesiredReplicas asserts that WVA's engine has decided to scale
+// the given variant above `above` replicas — the annotation-mode equivalent of the
+// pre-CRD-removal check on VariantAutoscaling.Status.DesiredOptimizedAlloc.NumReplicas.
+// It is decoupled from whether the scaler has actually resized the Deployment.
 //
-//   - KEDA backend: read the KEDA-managed HPA's Status.CurrentMetrics external
-//     value (KEDA populates it from wva_desired_replicas via Prometheus).
-//   - Prometheus-adapter backend: query the external.metrics.k8s.io API.
+//   - Prometheus-adapter backend: query the external.metrics.k8s.io API and assert
+//     the reported wva_desired_replicas value is > above. The adapter surfaces the
+//     gauge value faithfully.
+//   - KEDA backend: assert the KEDA-managed HPA has a non-empty external
+//     CurrentMetrics entry. KEDA only populates CurrentMetrics after successfully
+//     reading wva_desired_replicas from Prometheus, so this proves the engine's
+//     decision was emitted and consumed. (KEDA's emulated HPA does not surface a
+//     reliable numeric gauge value — every KEDA e2e asserts consumption, not the
+//     value — so a strict value threshold is not portable to this backend.)
 //
-// Returns (value, true) when a value is available, (0, false) otherwise (caller
-// should retry via Eventually).
-func wvaDesiredReplicasFor(g Gomega, namespace, variantName, scaleTargetDeployment string) (int64, bool) {
+// The caller wraps this in Eventually.
+func expectWVARaisesDesiredReplicas(g Gomega, namespace, variantName, scaleTargetDeployment string, above int64) {
 	if cfg.ScalerBackend == scalerBackendKeda {
-		// KEDA generates its own HPA (targeting the Deployment) and reports the
-		// current wva_desired_replicas reading in Status.CurrentMetrics. Despite the
-		// ScaledObject trigger declaring metricType "Value", the generated HPA
-		// surfaces the reading under AverageValue, so accept either field.
 		hpaList, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(ctx, metav1.ListOptions{})
 		g.Expect(err).NotTo(HaveOccurred())
+		var consumed bool
 		for i := range hpaList.Items {
 			if hpaList.Items[i].Spec.ScaleTargetRef.Name != scaleTargetDeployment {
 				continue
 			}
 			for _, m := range hpaList.Items[i].Status.CurrentMetrics {
-				if m.External == nil {
-					continue
-				}
-				if v := m.External.Current.Value; v != nil {
-					return v.Value(), true
-				}
-				if av := m.External.Current.AverageValue; av != nil {
-					return av.Value(), true
+				if m.External != nil {
+					consumed = true
 				}
 			}
 		}
-		return 0, false
+		g.Expect(consumed).To(BeTrue(),
+			"KEDA HPA for %s should have an external CurrentMetrics entry, proving wva_desired_replicas was emitted and consumed", scaleTargetDeployment)
+		return
 	}
 
 	raw, err := k8sClient.RESTClient().
@@ -793,18 +791,16 @@ func wvaDesiredReplicasFor(g Gomega, namespace, variantName, scaleTargetDeployme
 		DoRaw(ctx)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return 0, false
+			g.Expect(err).NotTo(HaveOccurred(), "wva_desired_replicas should be available for %s", variantName)
 		}
 		g.Expect(err).NotTo(HaveOccurred())
 	}
 	var list externalMetricValueList
 	g.Expect(json.Unmarshal(raw, &list)).To(Succeed())
-	if len(list.Items) == 0 {
-		return 0, false
-	}
+	g.Expect(list.Items).NotTo(BeEmpty(), "wva_desired_replicas should be available for %s", variantName)
 	q, err := resource.ParseQuantity(list.Items[0].Value)
-	if err != nil {
-		return 0, false
-	}
-	return q.Value(), true
+	g.Expect(err).NotTo(HaveOccurred(), "wva_desired_replicas value should parse")
+	GinkgoWriter.Printf("  wva_desired_replicas(%s)=%d (want > %d)\n", variantName, q.Value(), above)
+	g.Expect(q.Value()).To(BeNumerically(">", above),
+		"WVA should raise wva_desired_replicas above %d for %s", above, variantName)
 }

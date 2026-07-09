@@ -477,16 +477,11 @@ var _ = Describe("Multi-analyzer engine scale-up (saturation-driven, throughput 
 		// wva_desired_replicas and drives the target Deployment above its MinReplicas floor,
 		// so we assert the observable Deployment replica count instead.
 		By("Waiting for WVA to raise wva_desired_replicas above MinReplicas under faked saturation")
-		// The engine's scale-up decision is surfaced as the wva_desired_replicas
-		// value (formerly VariantAutoscaling.Status.DesiredOptimizedAlloc). Assert on
-		// that rather than the actual Deployment replica count, which depends on the
-		// separate KEDA/HPA actuation loop.
+		// The engine's scale-up decision is surfaced via wva_desired_replicas
+		// (formerly VariantAutoscaling.Status.DesiredOptimizedAlloc), decoupled from
+		// the separate scaler actuation loop.
 		Eventually(func(g Gomega) {
-			desired, ok := wvaDesiredReplicasFor(g, cfg.LLMDNamespace, vaName, modelDecodeDeployment)
-			g.Expect(ok).To(BeTrue(), "wva_desired_replicas should be available for %s", vaName)
-			GinkgoWriter.Printf("  Scale-up (%s): wva_desired_replicas=%d\n", vaName, desired)
-			g.Expect(desired).To(BeNumerically(">", int64(1)),
-				"faked kv-cache-usage=0.9 > scaleUpThreshold=0.85 should raise wva_desired_replicas above MinReplicas=1")
+			expectWVARaisesDesiredReplicas(g, cfg.LLMDNamespace, vaName, modelDecodeDeployment, 1)
 		}, time.Duration(cfg.EventuallyExtendedSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 	})
 })
