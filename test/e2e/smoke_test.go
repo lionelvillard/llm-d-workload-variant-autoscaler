@@ -11,6 +11,7 @@ import (
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,6 +23,7 @@ import (
 type externalMetricValueList struct {
 	Items []struct {
 		MetricLabels map[string]string `json:"metricLabels"`
+		Value        string            `json:"value"`
 	} `json:"items"`
 }
 
@@ -745,3 +747,54 @@ var _ = Describe("Smoke Tests - Infrastructure Readiness", Label("smoke", "full"
 		})
 	})
 })
+
+// wvaDesiredReplicasFor returns the current wva_desired_replicas value WVA has
+// emitted for the given variant, as observed at the scaler surface — decoupled
+// from whether KEDA/HPA has actually resized the Deployment yet. This mirrors the
+// pre-CRD-removal assertion on VariantAutoscaling.Status.DesiredOptimizedAlloc.
+//
+//   - KEDA backend: read the KEDA-managed HPA's Status.CurrentMetrics external
+//     value (KEDA populates it from wva_desired_replicas via Prometheus).
+//   - Prometheus-adapter backend: query the external.metrics.k8s.io API.
+//
+// Returns (value, true) when a value is available, (0, false) otherwise (caller
+// should retry via Eventually).
+func wvaDesiredReplicasFor(g Gomega, namespace, variantName, scaleTargetDeployment string) (int64, bool) {
+	if cfg.ScalerBackend == scalerBackendKeda {
+		hpaList, err := k8sClient.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(ctx, metav1.ListOptions{})
+		g.Expect(err).NotTo(HaveOccurred())
+		for i := range hpaList.Items {
+			if hpaList.Items[i].Spec.ScaleTargetRef.Name != scaleTargetDeployment {
+				continue
+			}
+			for _, m := range hpaList.Items[i].Status.CurrentMetrics {
+				if m.External != nil && m.External.Current.Value != nil {
+					return m.External.Current.Value.Value(), true
+				}
+			}
+		}
+		return 0, false
+	}
+
+	raw, err := k8sClient.RESTClient().
+		Get().
+		AbsPath("/apis/external.metrics.k8s.io/v1beta1/namespaces/"+namespace+"/"+constants.WVADesiredReplicas).
+		Param("labelSelector", "variant_name="+variantName+",exported_namespace="+namespace).
+		DoRaw(ctx)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return 0, false
+		}
+		g.Expect(err).NotTo(HaveOccurred())
+	}
+	var list externalMetricValueList
+	g.Expect(json.Unmarshal(raw, &list)).To(Succeed())
+	if len(list.Items) == 0 {
+		return 0, false
+	}
+	q, err := resource.ParseQuantity(list.Items[0].Value)
+	if err != nil {
+		return 0, false
+	}
+	return q.Value(), true
+}

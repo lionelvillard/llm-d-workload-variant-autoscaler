@@ -393,17 +393,17 @@ var _ = Describe("Saturation analyzer path and status propagation", Label("full"
 		By("Verifying controller is using V1 analyzer path")
 		expectAnalyzerPathLog("V1", modelID)
 
-		By("Verifying the target deployment scales above baseline")
+		By("Verifying WVA raises wva_desired_replicas above baseline")
+		// The engine's scale-up decision is surfaced as the wva_desired_replicas
+		// value (formerly VariantAutoscaling.Status.DesiredOptimizedAlloc). Assert
+		// on that rather than the actual Deployment replica count, which depends on
+		// the separate KEDA/HPA actuation loop and is not this suite's concern.
 		Eventually(func(g Gomega) {
-			dep, getErr := k8sClient.AppsV1().Deployments(cfg.LLMDNamespace).Get(ctx, modelDecodeDeployment, metav1.GetOptions{})
-			g.Expect(getErr).NotTo(HaveOccurred())
-			current := int32(0)
-			if dep.Spec.Replicas != nil {
-				current = *dep.Spec.Replicas
-			}
-			GinkgoWriter.Printf("  Scale-up progress (%s): replicas=%d baseline=%d\n", modelDecodeDeployment, current, baseline)
-			g.Expect(current).To(BeNumerically(">", baseline),
-				"V1 above-threshold saturation should scale the target deployment above baseline")
+			desired, ok := wvaDesiredReplicasFor(g, cfg.LLMDNamespace, vaName, modelDecodeDeployment)
+			g.Expect(ok).To(BeTrue(), "wva_desired_replicas should be available for %s", vaName)
+			GinkgoWriter.Printf("  Scale-up progress (%s): wva_desired_replicas=%d baseline=%d\n", vaName, desired, baseline)
+			g.Expect(desired).To(BeNumerically(">", int64(baseline)),
+				"V1 above-threshold saturation should raise wva_desired_replicas above baseline")
 		}, time.Duration(cfg.EventuallyExtendedSec)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).Should(Succeed())
 	})
 

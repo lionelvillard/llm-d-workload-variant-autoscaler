@@ -11,7 +11,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/constants"
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/test/e2e/fixtures"
@@ -263,14 +262,17 @@ var _ = Describe("Saturation V2 engine", Label("smoke", "full"), Ordered, func()
 	// kv-cache-usage above scaleUpThreshold. See v2SmokeFakeMetricsJSON for the
 	// calibration math. The recommendation is observed through the managed
 	// scaler driving the Deployment above a single replica.
-	It("should scale up the deployment when token utilization crosses scaleUpThreshold", func() {
-		By("Asserting the managed scaler drives the deployment above 1 replica")
+	It("should recommend scale-up when token utilization crosses scaleUpThreshold", func() {
+		By("Asserting WVA raises wva_desired_replicas above 1")
+		// The V2 scale-up recommendation is surfaced as the wva_desired_replicas
+		// value (formerly VariantAutoscaling.Status.DesiredOptimizedAlloc). Assert on
+		// that rather than the actual Deployment replica count, which depends on the
+		// separate KEDA/HPA actuation loop.
 		Eventually(func(g Gomega) {
-			dep, err := k8sClient.AppsV1().Deployments(cfg.LLMDNamespace).Get(ctx, modelDecodeDeployment, metav1.GetOptions{})
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(ptr.Deref(dep.Spec.Replicas, 1)).
-				To(BeNumerically(">", int32(1)),
-					"the managed scaler should drive the deployment above 1 replica when fake kv-cache-usage is above scaleUpThreshold")
+			desired, ok := wvaDesiredReplicasFor(g, cfg.LLMDNamespace, variantName, modelDecodeDeployment)
+			g.Expect(ok).To(BeTrue(), "wva_desired_replicas should be available for %s", variantName)
+			g.Expect(desired).To(BeNumerically(">", int64(1)),
+				"V2 should raise wva_desired_replicas above 1 when fake kv-cache-usage is above scaleUpThreshold")
 		}, time.Duration(cfg.ScaleUpTimeout)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).
 			Should(Succeed())
 	})
@@ -286,10 +288,10 @@ var _ = Describe("Saturation V2 engine", Label("smoke", "full"), Ordered, func()
 	//                             on v2SmokeFakeMetricsJSON for the math)
 	//
 	// The scaler enforces minReplicas=1, so the only valid scale-down outcome is
-	// 1. Assert the Deployment converges to exactly 1 so any regression that
-	// lands at 0 (MinReplicas violated) or stays above 1 (no scale-down) fails
+	// 1. Assert wva_desired_replicas converges to exactly 1 so any regression that
+	// recommends 0 (MinReplicas violated) or stays above 1 (no scale-down) fails
 	// loudly with a precise diff.
-	It("should scale down the deployment when load drops below scaleDownBoundary", func() {
+	It("should recommend scale-down when load drops below scaleDownBoundary", func() {
 		By("Switching to canonical-ordering thresholds (scaleUp=0.95, scaleDown=0.85)")
 		const (
 			scaleDownTestUpThreshold = 0.95
@@ -303,13 +305,14 @@ var _ = Describe("Saturation V2 engine", Label("smoke", "full"), Ordered, func()
 		)
 		Expect(upsertSaturationConfigEntry(ctx, cmNamespace, cmName, cmKey, cfgYAML)).To(Succeed())
 
-		By("Asserting the managed scaler drives the deployment down to the minReplicas floor (1)")
+		By("Asserting WVA drops wva_desired_replicas to the minReplicas floor (1)")
+		// Reflects the engine's scale-down recommendation, decoupled from KEDA/HPA
+		// actuation.
 		Eventually(func(g Gomega) {
-			dep, err := k8sClient.AppsV1().Deployments(cfg.LLMDNamespace).Get(ctx, modelDecodeDeployment, metav1.GetOptions{})
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(ptr.Deref(dep.Spec.Replicas, 0)).
-				To(Equal(int32(1)),
-					"the managed scaler should drop the deployment to 1 (MinReplicas floor) when load is below scaleDownBoundary")
+			desired, ok := wvaDesiredReplicasFor(g, cfg.LLMDNamespace, variantName, modelDecodeDeployment)
+			g.Expect(ok).To(BeTrue(), "wva_desired_replicas should be available for %s", variantName)
+			g.Expect(desired).To(Equal(int64(1)),
+				"V2 should drop wva_desired_replicas to 1 (MinReplicas floor) when load is below scaleDownBoundary")
 		}, time.Duration(cfg.ScaleUpTimeout)*time.Second, time.Duration(cfg.PollIntervalSec)*time.Second).
 			Should(Succeed())
 	})
