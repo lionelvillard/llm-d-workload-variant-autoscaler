@@ -32,7 +32,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/llm-d/llm-d-workload-variant-autoscaler/internal/actuator"
@@ -403,11 +402,6 @@ func (e *Engine) processInactiveVariant(ctx context.Context, scaleTargets map[st
 		e.recorder.Eventf(&va, corev1.EventTypeNormal, constants.K8SEventScaledUp, string(interfaces.DecisionReasonScaleFromZero)+reasonDetails)
 	}
 	va.Status.Actuation.Applied = true
-
-	// 4. Trigger Reconciler
-	common.DecisionTrigger <- event.GenericEvent{
-		Object: &va,
-	}
 
 	// Log scaling decision for E2E and operators (mirrors saturation engine "Applied ... via shared cache").
 	logger.Info("Scale-from-zero decision written to cache",

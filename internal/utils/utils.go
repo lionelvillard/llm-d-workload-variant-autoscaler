@@ -39,10 +39,6 @@ func GetConfigMapWithBackoff(ctx context.Context, c client.Client, name, namespa
 	return resources.GetResourceWithBackoff(ctx, c, client.ObjectKey{Name: name, Namespace: namespace}, cm, constants.StandardBackoff, "ConfigMap")
 }
 
-func GetVariantAutoscalingWithBackoff(ctx context.Context, c client.Client, name, namespace string, va *llmdVariantAutoscalingV1alpha1.VariantAutoscaling) error {
-	return resources.GetResourceWithBackoff(ctx, c, client.ObjectKey{Name: name, Namespace: namespace}, va, constants.StandardBackoff, "VariantAutoscaling")
-}
-
 // UpdateStatusWithBackoff performs a Status Update operation with exponential backoff retry logic.
 // This function is kept for backward compatibility but doesn't handle resource version conflicts properly.
 func UpdateStatusWithBackoff[T client.Object](ctx context.Context, c client.Client, obj T, backoff wait.Backoff, resourceType string) error {
