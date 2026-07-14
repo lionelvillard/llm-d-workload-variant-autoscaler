@@ -1,6 +1,6 @@
 # Overprovisioning buffer via a buffer variant (KEDA)
 
-**Status:** Draft (revised 2026-07-02 — direction 2, buffer-variant Deployment)
+**Status:** Draft
 **Date:** 2026-06-15
 **Audience:** WVA contributors, llm-d-router (EPP) contributors
 
@@ -10,417 +10,153 @@ Model server cold start is slow (minutes). When demand bursts, KEDA computes
 the right replica count quickly, but new pods are not Ready in time — the
 burst is served by an undersized fleet and SLOs are missed.
 
-We want a way to keep `N` extra warm pods on standby. Extra pods are real,
-Ready, fully initialized model servers; they receive no traffic until the
-primary fleet is saturated, at which point EPP fails over to them
-instantaneously — no cold start, no controller-mediated promotion.
+We want `N` extra warm pods on standby. Buffer pods are real, Ready model
+servers that receive no traffic until the primary fleet is saturated, at which
+point EPP admits them into scheduling instantly — no cold start, no
+controller-mediated promotion.
 
 ## Goals
 
 - Keep a configurable number of warm buffer pods alongside the primary fleet.
-- Hide buffer pods from routing until the primary fleet is saturated.
-- Fail over to buffer pods in milliseconds when saturation is detected —
-  the mechanism is EPP's own routing decision, not a controller-issued
-  label flip.
-- Scale down cleanly: buffer stays at `N` regardless of primary demand;
-  primary scales on its own metric.
-- Integrate with KEDA `ScaledObject` on the primary. Buffer replica count is
-  fixed on the buffer Deployment and does not depend on KEDA at all.
-- No new CRDs.
-- No changes to the deprecated `VariantAutoscaling` CRD.
+- Hide buffer pods from routing until the primary fleet is saturated; admit
+  them via EPP's own per-request scheduling decision (not a label flip).
+- Primary scales on its own KEDA metric; buffer stays at `N`.
+- No new CRDs. No changes to the deprecated `VariantAutoscaling` CRD.
 
 ## Non-goals (v1)
 
-- Cross-model / cross-pool buffer sharing (one buffer serves multiple
-  primaries).
-- Predictive buffer sizing based on historical load.
-- Buffer pods on a different accelerator SKU than the primary. (Same PodSpec
-  in v1; different-SKU buffers are a follow-up.)
-- Auto-tuning `N`. The admin sets it.
-- Direct `HorizontalPodAutoscaler` support without KEDA.
+- Cross-model / cross-pool shared buffers.
+- Predictive or auto-tuned buffer sizing (admin sets `N`).
+- Buffer pods on a different accelerator SKU than primary (same PodSpec in v1).
+- Direct HPA support without KEDA.
 
-## Concepts
+## Design
 
-- **Primary variant.** The Deployment already being scaled by KEDA. Pods
-  carry `llm-d.ai/variant=primary` (or no `variant` label — the filter treats
-  an absent label as `primary`).
-- **Buffer variant.** A sibling Deployment with the same PodSpec, fixed
-  `spec.replicas=N`, no autoscaler. Pods carry `llm-d.ai/variant=buffer`.
-- **InferencePool.** The two Deployments share a pool via a common label
-  (e.g., `model=foo`). One `InferencePool.spec.selector` selects both
-  variants; EPP loads both into its datastore as normal endpoints.
-- **Buffer gate filter.** A new EPP scheduling `Filter` plugin that drops
-  `variant=buffer` endpoints from candidates unless the primary variant is
-  saturated (per EPP's existing `SaturationDetector`).
-
-## High-level design
+Two sibling Deployments in one InferencePool, distinguished by a pod label. A
+new EPP scheduling filter gates the buffer sub-fleet on the primary's
+saturation.
 
 ```
-   +-------------------------+           +--------------------------+
-   |  Primary Deployment     |           |  Buffer Deployment       |
-   |  labels: variant=primary|           |  labels: variant=buffer  |
-   |  replicas: managed by   |           |  replicas: fixed N       |
-   |  ScaledObject 'foo'     |           |  (no ScaledObject)       |
-   +-----------+-------------+           +------------+-------------+
-               |                                      |
-               +--------------+     +-----------------+
-                              |     |
-                              v     v
-                        +---------------+
-                        | InferencePool |
-                        |  selector:    |
-                        |    model=foo  |  (unions both variants)
-                        +-------+-------+
-                                |
-                                v
-                        +---------------+
-                        |     EPP       |
-                        | scheduler:    |
-                        |  buffer-gate  |  <- new Filter plugin
-                        |    filter     |
-                        +---------------+
+   Primary Deployment              Buffer Deployment
+   (no buffer label)               llm-d.ai/buffer: "true"
+   replicas: KEDA ScaledObject     replicas: fixed N (no autoscaler)
+            \                              /
+             \                            /
+              +------> InferencePool <---+       selector unions both
+                           |
+                           v
+                          EPP
+                    buffer-gate filter  --> reads configured SaturationDetector
 ```
 
-- **WVA has no controller in this design.** Nothing to reconcile beyond
-  what the operator authors declaratively. Optionally we ship a small
-  admission validator (see "Optional guardrails" below) but no reconciliation
-  loop.
-- **EPP change is one Filter plugin** plus registration. The Filter reuses
-  the existing `SaturationDetector` interface for the saturation signal.
-- **KEDA behavior is unchanged.** The primary `ScaledObject` scales the
-  primary variant. The buffer Deployment is scaled by nothing — its
-  `spec.replicas=N` is stable; Kubernetes' Deployment controller refills any
-  pod that dies.
+- **Primary variant.** Existing Deployment scaled by KEDA. Pods carry no
+  buffer label.
+- **Buffer variant.** Sibling Deployment, same PodSpec, `spec.replicas=N`, no
+  autoscaler. Pods carry `llm-d.ai/buffer: "true"`.
+- **InferencePool.** One pool selects both variants (as P/D disaggregation
+  already unions sub-fleets under `llm-d.ai/role`).
+- **buffer-gate filter.** New scheduling `Filter` that drops buffer endpoints
+  unless the primary sub-fleet's saturation is at/above a threshold.
 
-## Configuration surface
+WVA has no runtime role: the operator authors the Deployments, ScaledObject,
+InferencePool, and EPP config declaratively. Nothing to reconcile.
 
-There is no controller-managed configuration surface. The operator authors:
+### Label choice
 
-1. A primary Deployment (existing).
-2. A primary `ScaledObject` targeting the primary Deployment (existing).
-3. A **buffer Deployment** — same PodSpec as primary, `spec.replicas=N`,
-   `variant=buffer` label on template.
-4. A shared `InferencePool` whose selector matches both variants.
-5. **In the EPP config**, enable the `buffer-gate` filter in the default
-   scheduling profile.
-
-The primary's KEDA trigger PromQL should be scoped to `variant=primary` to
-avoid metric dilution (see Risks).
-
-### Optional guardrails
-
-WVA can ship a validating admission webhook (v1 or a follow-up) that:
-
-- Warns if a Deployment carrying `variant=buffer` has an autoscaler
-  attached (`ScaledObject` or `HorizontalPodAutoscaler` referencing it).
-- Warns if a primary `ScaledObject.spec.triggers[*].metadata.query` does
-  not filter by `variant=primary` (best-effort static check).
-
-These are advisory. The core feature does not depend on them.
+WVA already uses `llm-d.ai/variant` for a different purpose (value = the
+`VariantAutoscaling` name, consumed by the metrics collector —
+`internal/constants/labels.go`). To avoid a collision, buffering uses a
+dedicated key: `llm-d.ai/buffer: "true"` on buffer pods, absent on primary.
 
 ## EPP integration (the load-bearing component)
 
-The change is a new Filter plugin under
-`pkg/epp/framework/plugins/scheduling/filter/buffergate/`. It implements the
-`scheduling.Filter` interface
-(`pkg/epp/framework/interface/scheduling/plugins.go`).
+A new `Filter` plugin at
+`pkg/epp/framework/plugins/scheduling/filter/buffergate/` (sibling of
+`bylabel/`), registered in `cmd/epp/runner/runner.go`.
 
-### Contract
+The filter partitions candidates into primary/buffer by label, then reuses the
+**already-configured** `SaturationDetector`. That interface
+(`pkg/epp/framework/interface/flowcontrol`) exposes a saturation gradient over
+a caller-supplied endpoint slice:
 
 ```go
-package buffergate
+Saturation(ctx context.Context, endpoints []datalayer.Endpoint) float64
+// >= 1.0 means fully saturated
+```
 
-// Filter admits endpoints labeled variant=buffer only when the primary
-// variant is saturated. Endpoints not labeled variant=buffer (i.e., primary)
-// always pass.
-type Filter struct {
-    // Injected via plugin config
-    labelKey       string          // default "llm-d.ai/variant"
-    bufferValue    string          // default "buffer"
-    saturationDet  fwkfc.SaturationDetector
-}
+so the gate passes only the primary sub-fleet and thresholds the result. No
+interface change and no duplicated saturation math are needed — the filter
+resolves the detector by name through the plugin `Handle`
+(`handle.Plugin(ref)`), the same mechanism the disagg profile handler uses.
 
-// Filter is called once per request by the scheduler with the current
-// endpoint candidate set for the pool.
-func (f *Filter) Filter(ctx context.Context, endpoints []fwkdl.Endpoint) []fwkdl.Endpoint {
-    // Partition into primary and buffer sub-slices.
-    primary, buffer := partition(endpoints, f.labelKey, f.bufferValue)
+```go
+func (f *BufferGate) Filter(ctx context.Context, _ *scheduling.InferenceRequest,
+    endpoints []scheduling.Endpoint) []scheduling.Endpoint {
 
-    // If there are no buffer endpoints, nothing to gate.
+    primary, buffer := partitionByBufferLabel(endpoints) // GetMetadata().Labels
     if len(buffer) == 0 {
-        return primary
+        return primary // nothing to gate
     }
-
-    // Reuse EPP's existing SaturationDetector over the primary sub-slice.
-    if f.saturationDet.SaturatedOver(ctx, primary) {
-        return endpoints // admit all — primary + buffer
+    // Empty or stale primary => Saturation returns >= 1.0 (covers cold start).
+    if f.detector.Saturation(ctx, toDatalayer(primary)) >= f.saturationThreshold {
+        return endpoints // admit primary + buffer
     }
     return primary
 }
 ```
 
-### Why a Filter (not a ProfileHandler or a dual-pool datastore)
+`saturationThreshold` defaults to `1.0` ("primary fully saturated"); operators
+can lower it to admit buffer slightly earlier. If `detectorRef` is
+unresolvable the factory errors, so misconfiguration is caught at startup.
 
-- Filters get the pool's endpoint slice as input and can inspect all of them
-  before returning a narrower set. This is exactly the shape needed.
-- The existing `bylabel` filter
-  (`pkg/epp/framework/plugins/scheduling/filter/bylabel/filter.go`) is the
-  precedent for label-based per-endpoint decisions.
-- A ProfileHandler would need two profiles and a decision on which to run;
-  simpler to keep one profile and let the filter narrow the set.
-- The datastore does NOT need to change. A single `InferencePool` selecting
-  both variants is what already happens for role-based disaggregation
-  (`llm-d.ai/role=decode|prefill`) — the codebase treats sub-fleets within
-  one pool as normal.
+**Why not reuse the utilization detector's own `Filter`?** It already drops
+*individual* saturated endpoints, but that is endpoint-local backpressure — it
+cannot express "keep the buffer sub-fleet invisible until the *primary*
+sub-fleet as a whole saturates." The gate is a set-level decision across two
+sub-fleets; it borrows the detector for the number, not the policy.
 
-### Saturation signal — reuse `SaturationDetector`
+## Metric dilution
 
-EPP already computes aggregate pool saturation in two places:
-
-- `pkg/epp/framework/plugins/flowcontrol/saturationdetector/utilization/detector.go`
-  — KV cache utilization and queue depth thresholds.
-- `pkg/epp/framework/plugins/flowcontrol/saturationdetector/concurrency/detector.go`
-  — concurrency limits.
-
-Both implement the `flowcontrol.SaturationDetector` interface
-(`pkg/epp/framework/interface/flowcontrol/plugins.go`). Today it's used only
-in the admission control path
-(`pkg/epp/flowcontrol/controller/internal/processor.go`).
-
-**Change required.** Expose the same detector to scheduling filters. Two
-options:
-
-1. **Extract a small `SaturatedOver(ctx, endpoints)` method** onto the
-   detector interface. Reuse the same threshold config, applied over a
-   caller-supplied subset. Small refactor; filters import the interface.
-2. **Register the detector as a scheduling-side plugin dependency.** The
-   scheduler framework already supports plugin composition; the filter
-   declares a dependency on the same `SaturationDetector` instance the flow
-   controller uses.
-
-Option 1 is cleaner. Either way, the semantics of "saturated" are unchanged
-and stay in one place — the buffer feature does not introduce a second
-threshold or a second signal.
-
-Cache: EPP's `CachedEndpointCandidates` already caches Filter output for
-~50ms, so the saturation check runs at most once per 50ms per pool. Buffer
-endpoints appear or disappear from the candidate set within one cache TTL.
-
-### Failure mode: SaturationDetector unavailable
-
-If the filter cannot resolve a `SaturationDetector`, it fails **closed** —
-does not admit buffer endpoints. Primary continues to serve; buffer sits
-idle. This preserves the invariant that buffer receives no traffic unless
-saturation is explicitly detected.
-
-## Data model
-
-No CRDs. No pod labels written by any controller. The `llm-d.ai/variant`
-label is authored by the operator on the buffer Deployment's PodTemplate,
-same as `llm-d.ai/role` is authored today for disaggregation.
-
-## Lifecycles
-
-### Cold start (KEDA lifts primary from zero)
+The primary's KEDA trigger must exclude buffer pods, or buffer pods (serving
+nothing) drag the metric down and KEDA under-scales. Recommended: filter the
+PromQL by the sanitized label (`llm-d.ai/buffer` → `llm_d_ai_buffer`):
 
 ```
-t=0   Primary Deployment idle (0 replicas via KEDA scale-to-zero).
-      Buffer Deployment at N replicas — Ready and warm.
-t=Δ   First request arrives. Primary has no endpoints; buffer is
-      variant=buffer so the gate filter must decide.
-      SaturatedOver(primary=[]) → true (empty set is trivially saturated).
-      Filter admits buffer endpoints; the request is served by a buffer pod.
-t=2Δ  KEDA activates primary (its trigger fires on the incoming load).
-      Primary pod starts, becomes Ready. Filter now sees primary=[p1] and
-      re-evaluates saturation.
+avg(vllm:kv_cache_usage{model="foo", llm_d_ai_buffer=""})
 ```
 
-Note: buffer's role during cold start is different from during a burst.
-This is a real benefit — the same mechanism handles scale-from-zero.
-
-### Burst
-
-```
-t=0   A=5 primary pods, N=2 buffer pods. Traffic climbs.
-t=Δ   Primary approaches queue-depth / KV-cache threshold. Next incoming
-      request: SaturatedOver(primary=[p1..p5]) → true.
-      Filter returns all 7 endpoints; the scheduler routes to one — likely
-      a buffer pod (its queue is empty).
-t=2Δ  Buffer traffic climbs. Primary KEDA metric (filtered by variant=primary)
-      also rises. KEDA scales primary to 7.
-t=3Δ  New primary pods become Ready. Primary saturation eases;
-      SaturatedOver(primary) → false. Filter goes back to
-      excluding buffer endpoints.
-```
-
-### Scale down
-
-Automatic:
-
-- Primary follows its KEDA trigger down. KEDA terminates primary pods
-  normally; buffer is untouched.
-- Buffer stays at `N`. No "demotion" event exists.
-
-### Buffer pod dies
-
-Kubernetes Deployment controller replaces it. No controller involvement.
-
-## Metric dilution mitigations
-
-The **primary variant's KEDA trigger must not include buffer pods in its
-metric**. Otherwise buffer pods (which normally serve nothing) drag the
-average down, and KEDA under-scales the primary. Three mitigations, ranked
-by generality:
-
-### (a) PromQL label filter — recommended default
-
-Author the trigger query with an explicit `variant="primary"` predicate:
-
-```
-avg(vllm:kv_cache_usage{job="model-server", model="foo", variant="primary"})
-```
-
-**Requires.** Prometheus scrape metadata includes the pod's labels as metric
-labels (standard behavior with `PodMonitor` / `ServiceMonitor` under the
-Prometheus Operator; standard with `honor_labels` + label relabel_configs
-in vanilla Prometheus).
-
-**Applicability.** Covers the large majority of real deployments. Failing
-cases: metrics ingested through pipelines that strip pod labels (some OTel
-collector configs, aggregation gateways).
-
-### (b) Separate PodMonitor per variant — backup
-
-Create two `PodMonitor`s. One matches `variant=primary`, one matches
-`variant=buffer`. KEDA's trigger reads only the primary stream. Buffer
-metrics are still available for observability under a distinct scrape job.
-
-**Applicability.** Works even when raw metrics don't preserve pod labels,
-because the split happens at scrape config, not query time.
-
-**Cost.** Doubles the scrape config. More YAML for operators to maintain.
-
-### (c) Prometheus recording rule — advanced
-
-```
-groups:
-- name: llm-d
-  rules:
-  - record: vllm:kv_cache_usage_primary
-    expr: avg(vllm:kv_cache_usage{variant="primary"})
-```
-
-KEDA's trigger reads the recording rule. Filter is authored once in
-Prometheus config; ScaledObjects reference the pre-filtered metric by name.
-
-**Applicability.** Requires operator control over Prometheus configuration.
-Not always available in managed-Prometheus environments.
-
-Not recommended (documented for completeness):
-
-- Turning off scrape on buffer pods entirely (loses observability).
-- Reworking the KEDA formula to divide by an "active count" query (adds
-  complexity for no net benefit over (a)).
-
-**The spec recommends (a) as the default and (b) as the documented backup.**
-Both should appear in user-facing docs with concrete PromQL / PodMonitor
-snippets.
+Backup when scrape pipelines strip pod labels: a separate `PodMonitor` per
+variant so KEDA reads only the primary stream.
 
 ## Failure modes
 
 | Failure | Behavior |
 |---|---|
-| Buffer Deployment deleted | Feature silently off. Filter finds no `variant=buffer` endpoints; primary carries all traffic. No harm beyond loss of buffering. |
-| Primary Deployment deleted | Buffer stays. Filter finds primary=[]; `SaturatedOver([])→true`; buffer serves all traffic. Documented as intended fallback for admin errors. |
-| ScaledObject deleted | Primary Deployment stops scaling. Same as today; buffer unaffected. |
-| InferencePool selector misconfigured (excludes buffer) | Filter never sees buffer endpoints; feature off. |
-| EPP filter not enabled | Buffer endpoints receive traffic normally (no gate). Feature degrades to "extra always-serving pods" — safe but not warm-standby. Detected by admission webhook (guardrails) if enabled. |
-| SaturationDetector unavailable to filter | Filter fails closed: buffer endpoints stay excluded. No harm. |
-| Primary trigger PromQL includes buffer pods | KEDA under-scales primary; buffer sees more traffic than intended. Metric-dilution mitigation section applies. Documented; guardrail can warn. |
-| Prometheus down / scaler in fallback | KEDA holds primary at fallback replicas; buffer unaffected; EPP continues routing via the filter. Independent of Prometheus availability. |
-| Node failure kills buffer pod | Deployment controller replaces it. No controller involvement. |
+| Buffer Deployment deleted | Feature off; primary carries all traffic. |
+| Primary Deployment deleted | `Saturation([]) >= threshold` → buffer serves all traffic. Intended fallback. |
+| EPP filter not enabled | Buffer endpoints serve normally — safe, but not warm-standby. |
+| `detectorRef` unresolvable | Factory errors; EPP fails to start with a clear message. |
+| Primary metrics stale/nil | Detector scores them saturated → buffer admitted. Conservative. |
+| Trigger PromQL includes buffer pods | KEDA under-scales; see Metric dilution. |
+| Buffer pod dies | Deployment controller replaces it. No controller involvement. |
 
-## Risks and open questions
-
-1. **Filter must be enabled in EPP config.** Without it, buffer pods serve
-   traffic. Advisory webhook can warn, but v1 puts the responsibility on the
-   operator's EPP config.
-
-2. **`SaturationDetector` semantics come from EPP.** WVA has no say in what
-   "saturated" means; it's whatever the deployed EPP instance is configured
-   to compute (utilization vs concurrency detector). This is a feature, not
-   a bug: routing decisions stay in the router.
-
-3. **`SaturatedOver(subset)` is a new interface method.** Existing
-   detectors compute over the whole pool. The refactor to accept a
-   caller-supplied subset is straightforward for `utilization` and
-   `concurrency` detectors but must be part of the change.
-
-4. **Filter output caching.** With the 50ms `CachedEndpointCandidates` TTL,
-   buffer endpoints appear or disappear at up to 20 Hz — plenty fast for
-   burst response. Documented so operators know the ceiling.
-
-5. **"Two Deployments" is a mild UX regression** compared to a single
-   Deployment with role labels (as done for disaggregation). This is
-   inherent to the design — pods can't change owner, so buffer pods must
-   belong to a distinct Deployment. Optional future work: a WVA-owned
-   `BufferSpec` CRD that hides the dual-Deployment YAML behind one object.
-
-6. **Same PodSpec constraint.** Buffer and primary must be identical for
-   traffic to be interchangeable. Enforced by convention in v1; future work
-   could add an admission check.
-
-7. **`InferencePool` selector must match both variants.** If the operator
-   uses a fine-grained selector that excludes buffer pods (e.g., matches
-   only `variant=primary`), the buffer is invisible to EPP. Documented.
-
-## Integration points
-
-### llm-d-workload-variant-autoscaler (this repo)
-
-- **No new reconciler for v1.** WVA does not participate at runtime.
-- Optional admission webhook under `internal/webhook/buffervariant/`:
-  - Warns on unsupported buffer configurations.
-  - Warns on primary trigger PromQL that doesn't filter by variant.
-- No new RBAC.
-- No new dependencies.
-- Documentation additions under `docs/user-guide/`.
-
-### llm-d-router
-
-- **New Filter plugin** at
-  `pkg/epp/framework/plugins/scheduling/filter/buffergate/`.
-- **`SaturationDetector.SaturatedOver(ctx, endpoints)` method** added to the
-  interface at
-  `pkg/epp/framework/interface/flowcontrol/plugins.go`, implemented by the
-  existing utilization and concurrency detectors.
-- Plugin registration in the scheduler config schema.
-- No RBAC changes.
-- Datastore unchanged.
-
-### KEDA / Prometheus / operator YAML
-
-- Buffer Deployment (see YAML example below).
-- Primary trigger PromQL filtered by `variant=primary`
-  (or backup: PodMonitor split).
-- EPP config includes `buffergate` filter in the default scheduling profile.
-
-## Example YAML
+## Example config
 
 ```yaml
-# Primary Deployment — existing, unchanged
+# Buffer Deployment — same PodSpec as primary, fixed replicas, no autoscaler
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: foo-primary
-  labels: {model: foo, llm-d.ai/variant: primary}
+  name: foo-buffer
+  labels: {model: foo, llm-d.ai/buffer: "true"}
 spec:
+  replicas: 2
   selector:
-    matchLabels: {model: foo, llm-d.ai/variant: primary}
+    matchLabels: {model: foo, app: foo-buffer}
   template:
     metadata:
-      labels: {model: foo, llm-d.ai/variant: primary}
-    spec: {containers: [...]}
+      labels: {model: foo, app: foo-buffer, llm-d.ai/buffer: "true"}
+    spec: {containers: [...]}    # identical to primary
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -433,98 +169,55 @@ spec:
   - type: prometheus
     metadata:
       serverAddress: http://prometheus:9090
-      # Metric dilution mitigation (a): explicit variant=primary filter
-      query: 'avg(vllm:kv_cache_usage{model="foo", variant="primary"})'
+      query: 'avg(vllm:kv_cache_usage{model="foo", llm_d_ai_buffer=""})'
       threshold: "0.7"
 ---
-# Buffer Deployment — same PodSpec, fixed replicas, no autoscaler
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: foo-buffer
-  labels: {model: foo, llm-d.ai/variant: buffer}
-spec:
-  replicas: 2                     # N buffer pods
-  selector:
-    matchLabels: {model: foo, llm-d.ai/variant: buffer}
-  template:
-    metadata:
-      labels: {model: foo, llm-d.ai/variant: buffer}
-    spec: {containers: [...]}     # same containers as primary
----
-# One InferencePool selects both variants
-apiVersion: inference.networking.x-k8s.io/v1
+apiVersion: inference.networking.k8s.io/v1
 kind: InferencePool
 metadata: {name: foo}
 spec:
-  selector: {model: foo}          # matches primary AND buffer pods
-  targetPortNumber: 8000
-  extensionRef: {name: foo-epp}
+  selector:
+    matchLabels: {model: foo}    # matches primary AND buffer
+  targetPorts:
+  - number: 8000
+  endpointPickerRef: {name: foo-epp}
 ---
-# EPP config enables the buffer-gate filter
-apiVersion: v1
-kind: ConfigMap
+apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
 metadata: {name: foo-epp-config}
-data:
-  config.yaml: |
-    schedulingProfiles:
-    - name: default
-      filters:
-      - name: buffergate
-        config:
-          labelKey: llm-d.ai/variant
-          bufferValue: buffer
-      - name: prefix-cache-affinity
-      # ... other filters
+plugins:
+- type: utilization-detector
+- type: buffer-gate-filter
+  parameters: {detectorRef: utilization-detector, saturationThreshold: 1.0}
+- type: max-score-picker
+- type: prefix-cache-scorer
+flowControl:
+  saturationDetector: {pluginRef: utilization-detector}
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: buffer-gate-filter
+  - pluginRef: max-score-picker
+  - pluginRef: prefix-cache-scorer
+    weight: 2
 ```
 
-## Out of scope (explicitly)
+## Testing
 
-- Cross-pool / cross-model shared buffer pools.
-- CRD for `BufferSpec` (a follow-up if the dual-Deployment YAML proves
-  awkward).
-- Automatic authoring of the buffer Deployment from the primary
-  Deployment's spec.
-- Buffer pods on a cheaper accelerator SKU than primary.
-- Prediction-based buffer sizing.
-- Direct HPA support without KEDA.
+- **Unit (llm-d-router):** `buffer-gate-filter` over `scheduling.Endpoint`
+  fakes with a fake detector — primary saturated → admits buffer; not
+  saturated → drops buffer; empty primary → admits; empty buffer → no-op.
+  Factory resolves/validates `detectorRef` and defaults `saturationThreshold`.
+- **E2E (Make target):** buffer idle while primary serves; drive saturation
+  and verify traffic shifts to buffer within one metrics-refresh interval;
+  kill a buffer pod and confirm replacement; scale primary via KEDA and
+  confirm buffer stays at `N`.
 
-## Testing strategy
+## Rollout
 
-Unit (llm-d-router):
-
-- `buffergate` filter: primary saturated → admits buffer; not saturated →
-  drops buffer; empty primary → admits buffer; empty buffer → no-op.
-- `SaturationDetector.SaturatedOver(subset)` correctness with utilization
-  and concurrency detectors.
-- Filter respects the `CachedEndpointCandidates` TTL.
-
-Unit (WVA, if guardrails are shipped):
-
-- Admission webhook flags buffer Deployment with an attached scaler.
-- Webhook flags primary trigger PromQL without a variant filter.
-
-Integration (envtest with KEDA CRDs):
-
-- Full YAML from the example applies cleanly; buffer Deployment reaches
-  `Available` at N replicas.
-
-E2E (Make target):
-
-- Buffer pods idle while primary serves. Trigger saturation via a load
-  generator; verify traffic shifts to buffer within one candidate-cache TTL.
-- Kill a buffer pod; verify Deployment controller replaces it and EPP picks
-  the replacement up.
-- Scale primary via KEDA; verify buffer stays at `N`.
-
-## Migration / rollout
-
-- Existing deployments without a buffer Deployment behave identically —
-  no `variant=buffer` endpoints exist, filter is a no-op.
-- Adding buffering to an existing deployment:
-  1. Author the buffer Deployment.
-  2. Ensure the primary trigger PromQL filters by `variant=primary` (or
-     split PodMonitors).
-  3. Enable the `buffergate` filter in EPP config; restart EPP.
-- Removing buffering: delete the buffer Deployment. Filter has no effect;
-  primary continues to serve.
+- No buffer Deployment → no buffer endpoints → filter is a no-op. Existing
+  deployments are unaffected.
+- Enable: author the buffer Deployment, scope the trigger PromQL to exclude
+  buffer pods, add `buffer-gate-filter` (+ a `saturationDetector`) to the EPP
+  config, restart EPP.
+- Disable: delete the buffer Deployment.
