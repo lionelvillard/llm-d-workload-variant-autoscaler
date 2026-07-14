@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: foo-load
+  namespace: buffer-demo
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: load
+          image: curlimages/curl:8.11.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              URL="${EPP_URL:-http://foo.buffer-demo.svc.cluster.local:8000}/v1/chat/completions"
+              echo "Firing 40 concurrent requests at $URL"
+              for i in $(seq 1 40); do
+                curl -sS -o /dev/null -w "%{http_code}\n" \
+                  -H 'Content-Type: application/json' \
+                  -d '{"model":"test-model","messages":[{"role":"user","content":"hello, tell me a long story"}],"max_tokens":128}' \
+                  "$URL" &
+              done
+              wait
+              echo "load complete"
+          env:
+            - name: EPP_URL
+              value: "http://foo.buffer-demo.svc.cluster.local:8000"

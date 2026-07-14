@@ -1,0 +1,32 @@
+# Helm values overlay for the llm-d-router-standalone chart. Adds the
+# buffer-gate-filter (plus the utilization-detector it references) to the
+# default scheduling profile. pluginsCustomConfig is a string value, so this
+# overlay must carry the FULL EndpointPickerConfig (Helm's last -f wins).
+router:
+  epp:
+    pluginsConfigFile: "buffer-gate-plugins.yaml"
+    pluginsCustomConfig:
+      buffer-gate-plugins.yaml: |
+        apiVersion: llm-d.ai/v1alpha1
+        kind: EndpointPickerConfig
+        plugins:
+        - type: utilization-detector
+          parameters:
+            queueDepthThreshold: 1        # saturate at 1 queued req for a snappy demo
+            kvCacheUtilThreshold: 0.8
+        - type: buffer-gate-filter
+          parameters:
+            detectorRef: utilization-detector
+            saturationThreshold: 1.0
+        - type: max-score-picker
+        - type: queue-scorer
+        flowControl:
+          saturationDetector:
+            pluginRef: utilization-detector
+        schedulingProfiles:
+        - name: default
+          plugins:
+          - pluginRef: buffer-gate-filter
+          - pluginRef: queue-scorer
+            weight: 1
+          - pluginRef: max-score-picker
