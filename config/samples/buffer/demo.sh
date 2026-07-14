@@ -79,9 +79,9 @@ kubectl -n "$NS" rollout status deploy/foo-buffer  --timeout=180s
 
 echo "==> 5/6 Baseline: light traffic should hit ONLY primary"
 kubectl -n "$NS" delete job foo-load --ignore-not-found
-kubectl -n "$NS" create job foo-baseline --image=curlimages/curl:8.11.0 -- \
+kubectl -n "$NS" create job foo-baseline --image=quay.io/curl/curl:8.11.1 -- \
   /bin/sh -c 'for i in $(seq 1 5); do curl -sS -o /dev/null -H "Content-Type: application/json" -d "{\"model\":\"test-model\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":8}" http://buffer-demo-epp.buffer-demo.svc.cluster.local:8081/v1/chat/completions; done'
-kubectl -n "$NS" wait --for=condition=complete job/foo-baseline --timeout=120s || true
+kubectl -n "$NS" wait --for=condition=complete job/foo-baseline --timeout=120s || echo "WARNING: job did not complete in time"
 sleep 5
 echo "--- buffer pod request counts after light load (expect ~0) ---"
 for p in $(kubectl -n "$NS" get pods -l tier=buffer -o name); do
@@ -90,7 +90,7 @@ done
 
 echo "==> 6/6 Burst: heavy concurrent load should spill onto buffer pods"
 kubectl -n "$NS" apply -f "$SAMPLES_DIR/load-job.yaml"
-kubectl -n "$NS" wait --for=condition=complete job/foo-load --timeout=180s || true
+kubectl -n "$NS" wait --for=condition=complete job/foo-load --timeout=180s || echo "WARNING: job did not complete in time"
 sleep 5
 echo "--- buffer pod request counts after burst (expect > 0) ---"
 for p in $(kubectl -n "$NS" get pods -l tier=buffer -o name); do

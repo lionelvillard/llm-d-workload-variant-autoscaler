@@ -10,7 +10,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: load
-          image: curlimages/curl:8.11.0
+          image: quay.io/curl/curl:8.11.1
           command: ["/bin/sh", "-c"]
           args:
             - |
