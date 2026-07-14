@@ -9,10 +9,17 @@ the primary has capacity, then absorb a burst instantly.
 |------|---------|
 | `primary-deployment.yaml` | Primary sim, no buffer label, scaled by nothing here |
 | `buffer-deployment.yaml`  | Buffer sim, `llm-d.ai/buffer: "true"`, fixed 2 replicas |
-| `service.yaml` / `inferencepool.yaml` | Union both variants under one pool |
+| `service.yaml`            | Headless Service so pod logs are addressable by tier |
 | `epp-values.yaml`         | Helm overlay enabling `buffer-gate-filter` + `utilization-detector` in the EPP |
 | `load-job.yaml`           | 40 concurrent requests to saturate the primary |
 | `demo.sh`                 | Build EPP image, create kind cluster, run baseline + burst |
+
+> **Note:** The chart (`llm-d-router-standalone`) creates the InferencePool
+> automatically, naming it `buffer-demo` and selecting pods with
+> `model: foo` (set via `router.modelServers.matchLabels.model=foo`).
+> The EPP is `buffer-demo-epp`; traffic enters on port **8081** (the
+> sidecar proxy listener).  There is no separate `inferencepool.yaml` in
+> this sample — the chart owns that resource.
 
 ## Prerequisites
 

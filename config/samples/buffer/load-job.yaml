@@ -15,7 +15,7 @@ spec:
           args:
             - |
               set -eu
-              URL="${EPP_URL:-http://foo.buffer-demo.svc.cluster.local:8000}/v1/chat/completions"
+              URL="${EPP_URL:-http://buffer-demo-epp.buffer-demo.svc.cluster.local:8081}/v1/chat/completions"
               echo "Firing 40 concurrent requests at $URL"
               for i in $(seq 1 40); do
                 curl -sS -o /dev/null -w "%{http_code}\n" \
@@ -27,4 +27,4 @@ spec:
               echo "load complete"
           env:
             - name: EPP_URL
-              value: "http://foo.buffer-demo.svc.cluster.local:8000"
+              value: "http://buffer-demo-epp.buffer-demo.svc.cluster.local:8081"

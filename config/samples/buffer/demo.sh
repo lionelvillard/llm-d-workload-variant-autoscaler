@@ -42,7 +42,10 @@ if [[ ! -d "$ROUTER_DIR/pkg/epp/framework/plugins/scheduling/filter/buffergate" 
   echo "ERROR: buffer-gate-filter package not found in $ROUTER_DIR — is the feature branch checked out?"; exit 1
 fi
 ( cd "$ROUTER_DIR" && EPP_IMAGE="$EPP_IMAGE" make image-build-epp )
-kind load docker-image "$EPP_IMAGE" --name "$CLUSTER"
+# Retag with localhost/ prefix so the image reference renders as a valid
+# registry path (avoids the leading-slash bug when registry="" is used).
+docker tag "$EPP_IMAGE" "localhost/$EPP_IMAGE"
+kind load docker-image "localhost/$EPP_IMAGE" --name "$CLUSTER"
 
 echo "==> 3/6 Installing Gateway API + GAIE CRDs and the EPP (locally built image)"
 # Gateway API + GAIE CRDs (the EPP needs the InferencePool CRD).
@@ -55,8 +58,10 @@ helm upgrade --install buffer-demo \
   oci://ghcr.io/llm-d/charts/llm-d-router-standalone \
   --version "$ROUTER_CHART_VERSION" \
   -f "$SAMPLES_DIR/epp-values.yaml" \
+  --set router.modelServers.matchLabels.model=foo \
+  --set "router.modelServers.targetPorts[0].number=8000" \
+  --set router.epp.image.registry=localhost \
   --set router.epp.image.repository="$EPP_IMAGE_REPO" \
-  --set router.epp.image.registry="" \
   --set router.epp.image.tag="$EPP_IMAGE_TAG" \
   --set router.epp.image.pullPolicy=Never \
   --set router.epp.resources.requests.cpu=100m \
@@ -75,8 +80,9 @@ kubectl -n "$NS" rollout status deploy/foo-buffer  --timeout=180s
 echo "==> 5/6 Baseline: light traffic should hit ONLY primary"
 kubectl -n "$NS" delete job foo-load --ignore-not-found
 kubectl -n "$NS" create job foo-baseline --image=curlimages/curl:8.11.0 -- \
-  /bin/sh -c 'for i in $(seq 1 5); do curl -sS -o /dev/null -H "Content-Type: application/json" -d "{\"model\":\"test-model\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":8}" http://foo.buffer-demo.svc.cluster.local:8000/v1/chat/completions; done'
-sleep 20
+  /bin/sh -c 'for i in $(seq 1 5); do curl -sS -o /dev/null -H "Content-Type: application/json" -d "{\"model\":\"test-model\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":8}" http://buffer-demo-epp.buffer-demo.svc.cluster.local:8081/v1/chat/completions; done'
+kubectl -n "$NS" wait --for=condition=complete job/foo-baseline --timeout=120s || true
+sleep 5
 echo "--- buffer pod request counts after light load (expect ~0) ---"
 for p in $(kubectl -n "$NS" get pods -l tier=buffer -o name); do
   echo "$p: $(kubectl -n "$NS" logs "$p" 2>/dev/null | grep -c 'chat/completions' || true) requests"

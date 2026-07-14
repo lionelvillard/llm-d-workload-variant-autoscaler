@@ -5,4 +5,3 @@ resources:
   - primary-deployment.yaml
   - buffer-deployment.yaml
   - service.yaml
-  - inferencepool.yaml
