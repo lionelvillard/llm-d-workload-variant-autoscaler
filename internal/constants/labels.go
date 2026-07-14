@@ -25,6 +25,13 @@ const (
 	// Kubernetes labels are sanitized for Prometheus: dots (.) and hyphens (-) become underscores (_).
 	// "llm-d.ai/variant" → "__meta_kubernetes_pod_label_llm_d_ai_variant" → "llm_d_ai_variant".
 	VariantLabelPrometheusKey = "llm_d_ai_variant"
+
+	// BufferLabelKey marks overprovisioning buffer pods. Buffer pods carry
+	// this label with value "true"; primary pods omit it. It is distinct from
+	// VariantLabelKey (which the metrics collector uses for VA attribution) to
+	// avoid collisions. The EPP buffer-gate filter routes traffic to buffer
+	// pods only when the primary sub-fleet is saturated.
+	BufferLabelKey = "llm-d.ai/buffer"
 )
 
 // Kubernetes Annotation Keys
