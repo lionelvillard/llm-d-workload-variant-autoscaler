@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 660" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" role="img" aria-labelledby="title desc">
+  <title id="title">Overprovisioning buffer — routing architecture</title>
+  <desc id="desc">A primary Deployment (scaled by a KEDA ScaledObject) and a fixed-size buffer Deployment (labeled llm-d.ai/buffer=true) are unioned by one InferencePool. The EPP's buffer-gate filter asks the configured SaturationDetector for the primary sub-fleet's saturation and admits buffer endpoints only when saturation meets the threshold; otherwise buffer pods stay hidden and only primary pods serve.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+
+  <!-- self-contained card so the diagram is legible on light or dark pages -->
+  <rect x="1" y="1" width="898" height="658" rx="14" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
+
+  <text x="32" y="42" font-size="19" font-weight="700" fill="#0f172a">Overprovisioning buffer — routing architecture</text>
+
+  <!-- ============ KEDA ScaledObject ============ -->
+  <rect x="32" y="78" width="176" height="86" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="2"/>
+  <text x="120" y="106" font-size="14" font-weight="700" fill="#065f46" text-anchor="middle">KEDA ScaledObject</text>
+  <text x="120" y="128" font-size="11.5" fill="#047857" text-anchor="middle">scales the primary on a</text>
+  <text x="120" y="145" font-size="11.5" fill="#047857" text-anchor="middle">buffer-excluded metric</text>
+
+  <!-- ============ Primary Deployment ============ -->
+  <rect x="272" y="72" width="252" height="98" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="398" y="100" font-size="14.5" font-weight="700" fill="#1e3a8a" text-anchor="middle">Primary Deployment</text>
+  <text x="398" y="123" font-size="12" fill="#1d4ed8" text-anchor="middle">no buffer label</text>
+  <text x="398" y="142" font-size="12" fill="#1d4ed8" text-anchor="middle">replicas: managed by KEDA</text>
+  <text x="398" y="160" font-size="11" fill="#64748b" text-anchor="middle">serves normally</text>
+
+  <!-- ============ Buffer Deployment ============ -->
+  <rect x="596" y="72" width="272" height="98" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="2"/>
+  <text x="732" y="100" font-size="14.5" font-weight="700" fill="#92400e" text-anchor="middle">Buffer Deployment</text>
+  <text x="732" y="123" font-size="12" fill="#b45309" text-anchor="middle">llm-d.ai/buffer: "true"</text>
+  <text x="732" y="142" font-size="12" fill="#b45309" text-anchor="middle">replicas: fixed N (no autoscaler)</text>
+  <text x="732" y="160" font-size="11" fill="#a16207" text-anchor="middle">warm standby</text>
+
+  <!-- KEDA -> Primary : sets replicas -->
+  <line x1="208" y1="112" x2="268" y2="112" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="238" y="103" font-size="10.5" fill="#475569" text-anchor="middle">sets</text>
+  <text x="238" y="103" font-size="10.5" fill="#475569" text-anchor="middle" dy="12">replicas</text>
+
+  <!-- Primary -> KEDA metric (dashed, buffer excluded) -->
+  <path d="M300,150 C250,178 226,176 210,150" fill="none" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <text x="250" y="197" font-size="10" fill="#64748b" text-anchor="middle">kv-cache / queue metric</text>
+  <text x="250" y="209" font-size="10" fill="#64748b" text-anchor="middle">(buffer pods excluded)</text>
+
+  <!-- ============ InferencePool ============ -->
+  <rect x="360" y="238" width="230" height="70" rx="10" fill="#f8fafc" stroke="#475569" stroke-width="2"/>
+  <text x="475" y="266" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle">InferencePool</text>
+  <text x="475" y="288" font-size="11.5" fill="#475569" text-anchor="middle">one selector unions both variants</text>
+
+  <!-- Primary -> Pool ; Buffer -> Pool -->
+  <line x1="398" y1="170" x2="452" y2="236" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="732" y1="170" x2="560" y2="236" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Pool -> EPP -->
+  <line x1="475" y1="308" x2="475" y2="356" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="486" y="336" font-size="11" fill="#475569" text-anchor="start">endpoints</text>
+
+  <!-- ============ EPP ============ -->
+  <rect x="150" y="358" width="650" height="212" rx="12" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2.5"/>
+  <text x="475" y="384" font-size="15" font-weight="700" fill="#5b21b6" text-anchor="middle">EPP — Endpoint Picker (scheduling profile)</text>
+
+  <!-- request in -->
+  <line x1="70" y1="430" x2="146" y2="430" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="70" y="420" font-size="11" fill="#475569" text-anchor="start">inference</text>
+  <text x="70" y="420" font-size="11" fill="#475569" text-anchor="start" dy="13">request</text>
+
+  <!-- buffer-gate filter -->
+  <rect x="186" y="404" width="220" height="74" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="296" y="432" font-size="13.5" font-weight="700" fill="#5b21b6" text-anchor="middle">buffer-gate filter</text>
+  <text x="296" y="452" font-size="11" fill="#6d28d9" text-anchor="middle">partitions primary vs. buffer;</text>
+  <text x="296" y="468" font-size="11" fill="#6d28d9" text-anchor="middle">gates buffer on saturation</text>
+
+  <!-- SaturationDetector -->
+  <rect x="470" y="404" width="288" height="74" rx="9" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+  <text x="614" y="430" font-size="13.5" font-weight="700" fill="#334155" text-anchor="middle">SaturationDetector (configured)</text>
+  <text x="614" y="450" font-size="11" fill="#475569" text-anchor="middle">utilization / concurrency</text>
+  <text x="614" y="466" font-size="11" fill="#475569" text-anchor="middle">Saturation(endpoints) → float ≥ 1.0 = saturated</text>
+
+  <!-- filter -> detector query -->
+  <line x1="406" y1="432" x2="466" y2="432" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="466" y1="452" x2="406" y2="452" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="436" y="425" font-size="9.5" fill="#475569" text-anchor="middle">primary</text>
+  <text x="436" y="490" font-size="9.5" fill="#475569" text-anchor="middle">score</text>
+
+  <!-- decision line -->
+  <text x="475" y="512" font-size="11.5" fill="#5b21b6" text-anchor="middle" font-weight="600">saturation ≥ threshold → admit primary + buffer   ·   otherwise → primary only</text>
+  <line x1="186" y1="524" x2="764" y2="524" stroke="#ddd6fe" stroke-width="1.5"/>
+  <text x="475" y="547" font-size="10.5" fill="#7c3aed" text-anchor="middle">empty or stale primary ⇒ saturated ⇒ buffer admitted (covers cold start)</text>
+
+  <!-- ============ pod outcomes ============ -->
+  <rect x="210" y="596" width="210" height="46" rx="9" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="315" y="618" font-size="12.5" font-weight="700" fill="#1e3a8a" text-anchor="middle">primary pods</text>
+  <text x="315" y="634" font-size="10.5" fill="#1d4ed8" text-anchor="middle">always eligible</text>
+
+  <rect x="500" y="596" width="210" height="46" rx="9" fill="#fffbeb" stroke="#d97706" stroke-width="2"/>
+  <text x="605" y="618" font-size="12.5" font-weight="700" fill="#92400e" text-anchor="middle">buffer pods</text>
+  <text x="605" y="634" font-size="10.5" fill="#b45309" text-anchor="middle">eligible only when saturated</text>
+
+  <!-- EPP -> pods -->
+  <line x1="400" y1="570" x2="330" y2="594" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="300" y="584" font-size="10" fill="#475569" text-anchor="middle">routes</text>
+  <line x1="560" y1="570" x2="600" y2="594" stroke="#b45309" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arrowAmber)"/>
+  <text x="672" y="584" font-size="10" fill="#b45309" text-anchor="middle">only when saturated</text>
+</svg>

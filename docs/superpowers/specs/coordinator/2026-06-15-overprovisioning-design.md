@@ -36,6 +36,11 @@ Two sibling Deployments in one InferencePool, distinguished by a pod label. A
 new EPP scheduling filter gates the buffer sub-fleet on the primary's
 saturation.
 
+![Overprovisioning buffer routing architecture](./overprovisioning-architecture.svg)
+
+<details>
+<summary>Text version of the diagram</summary>
+
 ```
    Primary Deployment              Buffer Deployment
    (no buffer label)               llm-d.ai/buffer: "true"
@@ -48,6 +53,8 @@ saturation.
                           EPP
                     buffer-gate filter  --> reads configured SaturationDetector
 ```
+
+</details>
 
 - **Primary variant.** Existing Deployment scaled by KEDA. Pods carry no
   buffer label.
