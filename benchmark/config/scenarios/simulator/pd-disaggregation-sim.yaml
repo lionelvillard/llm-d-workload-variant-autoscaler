@@ -51,7 +51,7 @@ scenario:
       path: models/facebook/opt-125m
       huggingfaceId: facebook/opt-125m
       gpuMemoryUtilization: 0
-      maxModelLen: 1024
+      maxModelLen: 16384
       size: 2Gi
 
     # -------------------------------------------------------------------------
@@ -154,7 +154,7 @@ scenario:
               memory: 512Mi
         monitoring:
           prometheus:
-            enabled: false
+            enabled: true
 
       # -----------------------------------------------------------------------
       # HTTPRoute timeout — mirror upstream
@@ -163,8 +163,171 @@ scenario:
         requestTimeout: "300s"
         backendRequestTimeout: "0s"
 
+      # =========================================================================
+      # DECODE
+      # The routing-sidecar (injected by the modelservice chart) receives requests
+      # and forwards the prefill phase to the prefill pod.  The sim handles decode
+      # locally.  KV "transfer" latency is simulated via --kv-cache-transfer-latency
+      # so TTFT includes the cross-pod round-trip cost without actual tensor movement.
+      # =========================================================================
+      decode:
+        replicas: 1
+
+        parallelism:
+          tensor: 1
+          data: 1
+          dataLocal: 1
+          workers: 1
+
+        resources:
+          limits:
+            memory: 256Mi
+            cpu: "500m"
+          requests:
+            memory: 256Mi
+            cpu: "100m"
+
+        accelerator:
+          count: 0
+
+        extraContainerConfig:
+          ports:
+            - containerPort: 8200 # TODO: use ${modelservice.decode.metricsPort} instead of hardcoded value
+              name: metrics
+              protocol: TCP
+
+        monitoring:
+          podmonitor:
+            enabled: true
+            portName: metrics
+            path: /metrics
+            interval: 15s
+
+        vllm:
+          modelCommand: imageDefault
+          additionalFlags:
+          - "--prefill-time-per-token=200ms"
+          - "--prefill-time-std-dev=3ms"
+          - "--enable-kvcache=true"
+          - "--max-model-len=8192"
+          - "--kv-cache-size=163840"
+
+      # =========================================================================
+      # PREFILL
+      # The sim binary handles its own argv when modelCommand: imageDefault.
+      # Latency profile: ~200 ms per input token to simulate a real prefill phase.
+      # No initContainers, no GPU env vars.
+      # =========================================================================
+      prefill:
+        enabled: true
+        replicas: 1
+
+        parallelism:
+          tensor: 1
+          data: 1
+          dataLocal: 1
+          workers: 1
+
+        extraContainerConfig:
+        ports:
+          - containerPort: 8200 # TODO: use ${modelservice.prefill.metricsPort} instead of hardcoded value
+            name: metrics
+            protocol: TCP
+
+        monitoring:
+          podmonitor:
+            enabled: true
+            portName: metrics
+            path: /metrics
+            interval: 15s
+
+        resources:
+          limits:
+            memory: 256Mi
+            cpu: "500m"
+          requests:
+            memory: 256Mi
+            cpu: "100m"
+
+        accelerator:
+          count: 0
+
+        vllm:
+          modelCommand: imageDefault
+          additionalFlags:
+          - "--prefill-time-per-token=200ms"
+          - "--prefill-time-std-dev=3ms"
+          - "--enable-kvcache=true"
+          - "--max-model-len=8192"
+          - "--kv-cache-size=163840"
+
     standalone:
       enabled: false
+
+    keda:
+      enabled: true
+
+      namespace: ""              # defaults to deploy namespace (first slot of `-p`)
+
+      prometheus:
+        baseUrl: http://prometheus-operated.monitoring.svc.cluster.local
+        port: 9090
+
+      scaledObjects:
+      - name: pd-disaggregation-sim-prefill
+        scaleTargetRef:
+          kind: Deployment
+          name: ${model.idLabel}-prefill
+        minReplicas: 1
+        maxReplicas: 4
+        unsafeSsl: true
+        triggers:
+          - name: epp-queue-size
+            type: prometheus
+            query: 'max(llm_d_epp_average_queue_size{name="${model.idLabel}-router"})'
+            threshold: "0.7"
+            metricType: AverageValue
+            activationThreshold: "0"
+        behavior:
+          scaleUp:
+            stabilizationWindowSeconds: 0
+            policies:
+              - type: Pods
+                value: 1
+                periodSeconds: 180
+          scaleDown:
+            stabilizationWindowSeconds: 300
+            policies:
+              - type: Pods
+                value: 1
+                periodSeconds: 300
+      - name: pd-disaggregation-sim-decode
+        scaleTargetRef:
+          kind: Deployment
+          name: ${model.idLabel}-decode
+        minReplicas: 1
+        maxReplicas: 4
+        unsafeSsl: true
+        triggers:
+          - name: epp-queue-size
+            type: prometheus
+            query: 'max(llm_d_epp_average_queue_size{name="${model.idLabel}-router"})'
+            threshold: "0.7"
+            metricType: AverageValue
+            activationThreshold: "0"
+        behavior:
+          scaleUp:
+            stabilizationWindowSeconds: 0
+            policies:
+              - type: Pods
+                value: 1
+                periodSeconds: 180
+          scaleDown:
+            stabilizationWindowSeconds: 300
+            policies:
+              - type: Pods
+                value: 1
+                periodSeconds: 300
 
     # =========================================================================
     # COMMON — vLLM Common
@@ -183,71 +346,6 @@ scenario:
         - name: dshm
           mountPath: /dev/shm
 
-    # =========================================================================
-    # PREFILL
-    # The sim binary handles its own argv when modelCommand: imageDefault.
-    # Latency profile: ~200 ms per input token to simulate a real prefill phase.
-    # No initContainers, no GPU env vars.
-    # =========================================================================
-    prefill:
-      enabled: true
-      replicas: 1
-
-      parallelism:
-        tensor: 1
-        data: 1
-        dataLocal: 1
-        workers: 1
-
-      resources:
-        limits:
-          memory: 256Mi
-          cpu: "500m"
-        requests:
-          memory: 256Mi
-          cpu: "100m"
-
-      accelerator:
-        count: 0
-
-      vllm:
-        modelCommand: imageDefault
-        additionalFlags:
-          - "--prefill-time-per-token=200ms"
-          - "--prefill-time-std-dev=3ms"
-
-    # =========================================================================
-    # DECODE
-    # The routing-sidecar (injected by the modelservice chart) receives requests
-    # and forwards the prefill phase to the prefill pod.  The sim handles decode
-    # locally.  KV "transfer" latency is simulated via --kv-cache-transfer-latency
-    # so TTFT includes the cross-pod round-trip cost without actual tensor movement.
-    # =========================================================================
-    decode:
-      replicas: 1
-
-      parallelism:
-        tensor: 1
-        data: 1
-        dataLocal: 1
-        workers: 1
-
-      resources:
-        limits:
-          memory: 256Mi
-          cpu: "500m"
-        requests:
-          memory: 256Mi
-          cpu: "100m"
-
-      accelerator:
-        count: 0
-
-      vllm:
-        modelCommand: imageDefault
-        additionalFlags:
-          - "--kv-cache-transfer-latency=5ms"
-          - "--inter-token-latency=15ms"
 
     # =========================================================================
     # STORAGE
