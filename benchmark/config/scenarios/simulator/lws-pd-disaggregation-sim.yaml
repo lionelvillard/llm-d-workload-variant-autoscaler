@@ -361,12 +361,12 @@ scenario:
       workloadPvc:
         accessModes:
           - ReadWriteOnce
-        storageClassName: standard
+        storageClassName: auto
       modelPvc:
         size: 2Gi
         accessModes:
           - ReadWriteOnce
-        storageClassName: standard
+        storageClassName: auto
 
     timeouts:
       controlWait: 300

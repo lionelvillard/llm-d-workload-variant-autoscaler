@@ -45,3 +45,4 @@ hack/tls-certs/
 
 # AI
 .claude/worktrees/
+.envrc
