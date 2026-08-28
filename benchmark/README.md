@@ -30,8 +30,12 @@ benchmark/
     │   ├── guides/           #   recommended
     │   └── staging/          #   WIP / test bed
     ├── scenarios/            # BACKEND-AGNOSTIC deployment + scaling strategy
-    │   ├── guides/
-    │   └── staging/
+    │   ├── guides/           #   recommended (one file per guide)
+    │   └── staging/          #   WIP + KEDA experiments (one dir per guide)
+    │       └── pd-disaggregation/
+    │           ├── baseline.yaml         # control = recommended strategy
+    │           ├── queue-aggressive.yaml # variant (<strategy>.yaml)
+    │           └── kv-early.yaml          # variant
     └── cluster-configs/      # swappable backend overlays (--cluster-config)
         ├── vllm.yaml         #   real vLLM, GPU
         ├── vllm-sim.yaml     #   real vLLM (CPU) + latency-simulation plugin
@@ -62,6 +66,39 @@ metrics, so the scenario's scaling strategy applies unchanged across backends.
 > user-local cluster constants (storageClassName/serviceAccount/runAsUser). Here
 > it doubles as the backend selector. If you also need per-cluster constants,
 > fold them into the chosen backend overlay or pass them with repeatable `--set`.
+
+## KEDA experiments (naming convention)
+
+To try alternative KEDA scaling strategies for a guide, add scenarios under a
+per-guide directory in `staging/`. The topology stays fixed; only the `keda:`
+block varies between siblings, so results isolate the scaling strategy.
+
+```
+scenarios/staging/<guide>/<strategy>.yaml
+specification/staging/<guide>/<strategy>.yaml.j2   # thin mirror, points at the scenario
+```
+
+Rules:
+
+- **`baseline.yaml`** is the control — a verbatim copy of the recommended
+  strategy in `scenarios/guides/<guide>.yaml`. Every variant is compared against
+  it.
+- **Each variant is `<strategy>.yaml`**, a short kebab-case name describing what
+  the strategy does — e.g. `queue-aggressive.yaml`, `kv-early.yaml`. The file's
+  header comment records the exact delta from `baseline.yaml`.
+- **Change only the `keda:` block** in a variant; keep everything else identical
+  to `baseline.yaml`.
+- **Promote a winner** by copying its `keda:` block back into
+  `scenarios/guides/<guide>.yaml`; retire the losing variants.
+
+Run an experiment exactly like a guide, pointing `--spec` at its `.j2`:
+
+```bash
+llmdbenchmark standup \
+  --spec benchmark/config/specification/staging/pd-disaggregation/queue-aggressive.yaml.j2 \
+  --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml \
+  -p <namespace>
+```
 
 ## Prerequisites
 
@@ -170,6 +207,9 @@ be unchanged.
 | Spec | Maturity | Verified |
 |------|----------|----------|
 | `guides/pd-disaggregation` | recommended | dry-run render across all three backends |
+| `staging/pd-disaggregation/baseline` | experiment (control) | dry-run render |
+| `staging/pd-disaggregation/queue-aggressive` | experiment | not yet run |
+| `staging/pd-disaggregation/kv-early` | experiment | not yet run |
 | `staging/lws-pd-disaggregation` | WIP / test bed | dry-run render only |
 
 Dry-run composition is confirmed for the three backend overlays. A live
