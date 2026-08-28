@@ -1,15 +1,75 @@
 # Benchmark Specs
 
-This directory contains [llm-d-benchmark](https://github.com/llm-d/llm-d-benchmark) specifications and scenarios for benchmarking this repository's autoscaler.
+This directory is an **autoscaling test bed** built on top of
+[llm-d-benchmark](https://github.com/llm-d/llm-d-benchmark). It holds
+`llm-d-benchmark` specifications and scenarios for exercising this repository's
+autoscaler, organized by guide and scaling strategy, and runnable across several
+inference backends.
+
+## Relationship to `llm-d-benchmark`
+
+Upstream `llm-d-benchmark/config/` is the source of **curated, recommended**
+general benchmark configs and of the shared machinery (Jinja templates and the
+base `defaults.yaml`). This directory:
+
+- **Reuses upstream by reference.** Each specification points `template_dir` and
+  `values_file` at a sibling `../llm-d-benchmark` clone — nothing is vendored, so
+  there is no drift.
+- **Extends it with autoscaling.** Scenarios layer recommended WVA/KEDA scaling
+  strategies on top of the upstream deployment topologies.
+- **Stages work in progress.** Unlike upstream (recommended only), this repo
+  keeps both recommended configs (`guides/`) **and** experimental ones
+  (`staging/`).
+
+## Directory layout
+
+```
+benchmark/
+└── config/
+    ├── specification/        # thin .j2 entrypoints — point llmdbenchmark at these
+    │   ├── guides/           #   recommended
+    │   └── staging/          #   WIP / test bed
+    ├── scenarios/            # BACKEND-AGNOSTIC deployment + scaling strategy
+    │   ├── guides/
+    │   └── staging/
+    └── cluster-configs/      # swappable backend overlays (--cluster-config)
+        ├── vllm.yaml         #   real vLLM, GPU
+        ├── vllm-sim.yaml     #   real vLLM (CPU) + latency-simulation plugin
+        └── inference-sim.yaml#   llm-d-inference-sim
+```
+
+- **Scenarios are backend-agnostic.** A scenario describes the deployment
+  topology and the scaling strategy (KEDA min/max, behavior, metric triggers),
+  but not the inference backend.
+- **Backend is a swappable overlay** applied with `--cluster-config`. Because the
+  harness deep-merges dicts but **replaces lists wholesale**, each overlay carries
+  the *complete* backend-specific lists (image, resources, init containers, env,
+  volumes, vLLM command). Overlays never set `keda` (the scaling strategy stays
+  with the scenario, whose `scaleTargetRef.kind` is topology-specific).
+
+### Backend matrix
+
+| Backend (`--cluster-config`)     | Runtime                              | GPU | Metrics source        | Priority |
+|----------------------------------|--------------------------------------|-----|-----------------------|----------|
+| `cluster-configs/vllm.yaml`        | real vLLM                             | yes | native `vllm:` metrics | high     |
+| `cluster-configs/vllm-sim.yaml`    | real vLLM (CPU) + simulation plugin  | no  | native `vllm:` metrics | high     |
+| `cluster-configs/inference-sim.yaml`| llm-d-inference-sim (fake server)   | no  | native `vllm:` metrics | low      |
+
+`vllm` and `vllm-sim` are the priority pair. All three expose native `vllm:`
+metrics, so the scenario's scaling strategy applies unchanged across backends.
+
+> Note: `--cluster-config` is a single-use flag that upstream documents for
+> user-local cluster constants (storageClassName/serviceAccount/runAsUser). Here
+> it doubles as the backend selector. If you also need per-cluster constants,
+> fold them into the chosen backend overlay or pass them with repeatable `--set`.
 
 ## Prerequisites
 
 ### Install the `llm-d-benchmark` CLI
 
-Clone `llm-d-benchmark` and install the CLI:
+Clone `llm-d-benchmark` as a sibling of this repo and install the CLI:
 
 ```bash
-# Default: clone as a sibling of this repo
 git clone https://github.com/llm-d/llm-d-benchmark.git ../llm-d-benchmark
 cd ../llm-d-benchmark && ./install.sh
 ```
@@ -20,15 +80,11 @@ Then activate the virtual environment so `llmdbenchmark` is on your PATH:
 source ../llm-d-benchmark/.venv/bin/activate
 ```
 
-If you cloned `llm-d-benchmark` somewhere other than the default sibling location, activate its venv accordingly:
+If you cloned `llm-d-benchmark` somewhere other than the default sibling
+location, activate its venv accordingly and pass `--base-dir` so the specs can
+resolve the sibling paths.
 
-```bash
-source /path/to/llm-d-benchmark/.venv/bin/activate
-```
-
-### Prepare a Kubernetes cluster
-
-#### Local cluster (Kind)
+### Prepare a Kubernetes cluster (local Kind, CPU backends)
 
 1. Create the cluster:
 
@@ -48,7 +104,10 @@ source /path/to/llm-d-benchmark/.venv/bin/activate
      --set-json 'prometheus.prometheusSpec.podMonitorSelector={}'
    ```
 
-   This exposes Prometheus at `http://prometheus-operated.monitoring.svc.cluster.local:9090`, which is what the benchmark scenarios are pre-configured to use. If you install into a different namespace or use a different release name, update `prometheus.baseUrl` in the relevant scenario file.
+   This exposes Prometheus at
+   `http://prometheus-operated.monitoring.svc.cluster.local:9090`, which the
+   scenarios are pre-configured to use. If you install into a different namespace
+   or release name, update `keda.prometheus.baseUrl` in the scenario file.
 
 3. Install KEDA 2.20 or later (required for autoscaler triggers):
 
@@ -57,40 +116,68 @@ source /path/to/llm-d-benchmark/.venv/bin/activate
    helm install keda kedacore/keda -n keda --create-namespace
    ```
 
-
-## Directory layout
-
-```
-benchmark/
-├── config/
-│   ├── specification/        # Jinja2 spec templates (.yaml.j2) — point llmdbenchmark at these
-│   ├── scenarios/            # Scenario YAMLs consumed by each spec
-│   └── templates/
-│       └── values/
-│           └── defaults.yaml # Default values merged into every scenario
-```
-
 ## Running a benchmark
 
-### Running the CLI directly
-
-After activating the venv (see Prerequisites), run `llmdbenchmark` from the repo root:
+Pick a specification (`guides/` or `staging/`) and a backend overlay. Run
+`llmdbenchmark` from the repo root after activating the venv:
 
 ```bash
-# Standup
-llmdbenchmark \
-  --spec benchmark/config/specification/simulator/pd-disaggregation-sim.yaml.j2 \
-  standup -p <namespace>
+# Standup — vLLM-CPU-sim backend (no GPU)
+llmdbenchmark standup \
+  --spec benchmark/config/specification/guides/pd-disaggregation.yaml.j2 \
+  --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml \
+  -p <namespace>
 
 # Run
-llmdbenchmark \
-  --spec benchmark/config/specification/simulator/pd-disaggregation-sim.yaml.j2 \
-  run -p <namespace> -l inference-perf -w guide_pd-disaggregation_1.yaml
+llmdbenchmark run \
+  --spec benchmark/config/specification/guides/pd-disaggregation.yaml.j2 \
+  --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml \
+  -p <namespace> -l inference-perf -w guide_pd-disaggregation_1.yaml
 
 # Teardown
-llmdbenchmark \
-  --spec benchmark/config/specification/simulator/pd-disaggregation-sim.yaml.j2 \
-  teardown -p <namespace>
+llmdbenchmark teardown \
+  --spec benchmark/config/specification/guides/pd-disaggregation.yaml.j2 \
+  --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml \
+  -p <namespace>
 ```
 
-Use `--dry-run` / `-n` to preview what would be applied without touching the cluster.
+Swap the `--cluster-config` value to target a different backend (e.g.
+`.../cluster-configs/inference-sim.yaml` or, on a GPU cluster,
+`.../cluster-configs/vllm.yaml`). Use `--dry-run` / `-n` to preview what would be
+applied without touching the cluster.
+
+### Verifying composition without a cluster
+
+`--dry-run` renders the merged config and manifests locally, so you can confirm a
+spec + backend overlay compose as intended before touching a cluster:
+
+```bash
+llmdbenchmark standup \
+  --spec benchmark/config/specification/guides/pd-disaggregation.yaml.j2 \
+  --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml \
+  -p bench --dry-run
+```
+
+Inspect the rendered `plan/pd-disaggregation/config.yaml` under the run directory
+and check the backend-specific values match the chosen overlay — image,
+`accelerator.count`, resources, `initContainers`, the vLLM command, and any
+`extraObjects`. Because the harness deep-merges dicts but replaces lists wholesale,
+each overlay's lists should appear in full and the scenario's `keda` block should
+be unchanged.
+
+## Status
+
+| Spec | Maturity | Verified |
+|------|----------|----------|
+| `guides/pd-disaggregation` | recommended | dry-run render across all three backends |
+| `staging/lws-pd-disaggregation` | WIP / test bed | dry-run render only |
+
+Dry-run composition is confirmed for the three backend overlays. A live
+end-to-end run on a cluster (standup → workload → teardown) has not yet been
+exercised for these specs.
+
+## Observability (planned)
+
+Autoscaling-specific tooling — Grafana dashboards tuned for scaling observability
+(desired vs. current replicas, trigger metrics, scale events) and install
+helpers — is a planned addition under `benchmark/`. It is not yet included.
