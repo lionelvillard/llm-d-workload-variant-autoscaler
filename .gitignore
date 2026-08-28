@@ -31,6 +31,7 @@ gpu.cluster
 llm-d/
 llm-d-infra/
 llm-d-benchmark/
+benchmark/hack/.venv/
 # llmdbenchmark workspace directories (created by benchmark runs)
 *-*-*-*-*-*/
 biran-*/

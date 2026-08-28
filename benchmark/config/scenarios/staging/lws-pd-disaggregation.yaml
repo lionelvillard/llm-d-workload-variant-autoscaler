@@ -2,7 +2,7 @@
 # Multinode (LeaderWorkerSet) variant of the pd-disaggregation guide, mirroring
 # wide-ep-lws-nvidia-gpu-vllm-glm-5-2-v2-{prefill,decode-ll} topology.
 #
-# STAGING: exercised primarily with the inference-sim / vllm-sim backends; the
+# STAGING: exercised primarily with the inference-sim / vllm-sim-* backends; the
 # real-vLLM multinode path is not yet validated here.
 #
 # Backend-agnostic like scenarios/guides/pd-disaggregation.yaml — pick a backend
@@ -31,10 +31,10 @@ scenario:
       patches: []
 
     model:
-      name: facebook/opt-125m
-      shortName: facebook-opt-125m
-      path: models/facebook/opt-125m
-      huggingfaceId: facebook/opt-125m
+      name: Qwen/Qwen3-32B      # served model id + harness request/tokenizer; must equal huggingfaceId
+      shortName: qwen3-32b
+      path: models/Qwen/Qwen3-32B
+      huggingfaceId: Qwen/Qwen3-32B
       maxModelLen: 16384
       size: 2Gi
 
@@ -117,6 +117,8 @@ scenario:
 
     decode:
       replicas: 1
+      accelerator:
+        count: 1                 # per-role accelerator count; backend overlays override (0 for CPU sims)
       parallelism:
         tensor: 1
         data: 1
@@ -141,6 +143,8 @@ scenario:
     prefill:
       enabled: true
       replicas: 1
+      accelerator:
+        count: 1                 # per-role accelerator count; backend overlays override (0 for CPU sims)
       parallelism:
         tensor: 1
         data: 1
@@ -255,12 +259,12 @@ scenario:
     storage:
       workloadPvc:
         accessModes:
-          - ReadWriteOnce
+          - ReadWriteMany
         storageClassName: auto
       modelPvc:
         size: 2Gi
         accessModes:
-          - ReadWriteOnce
+          - ReadWriteMany
         storageClassName: auto
 
     timeouts:

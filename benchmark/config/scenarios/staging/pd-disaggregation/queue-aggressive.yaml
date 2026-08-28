@@ -6,7 +6,7 @@
 #
 # This scenario deliberately contains NO backend-specific settings (image,
 # accelerator, per-role resources, vLLM command, plugins). Pick a backend by
-# layering one of benchmark/config/cluster-configs/{vllm,vllm-sim,inference-sim}.yaml
+# layering one of benchmark/config/cluster-configs/{vllm,vllm-sim-qwen3-32b,inference-sim}.yaml
 # via `--cluster-config`. See benchmark/README.md.
 #
 # Merge note: the harness deep-merges dicts but REPLACES lists wholesale. The
@@ -37,10 +37,10 @@ scenario:
     # MODEL — identity only. Backend overlays set gpuMemoryUtilization.
     # =========================================================================
     model:
-      name: facebook/opt-125m
-      shortName: facebook-opt-125m
-      path: models/facebook/opt-125m
-      huggingfaceId: facebook/opt-125m
+      name: Qwen/Qwen3-32B      # served model id + harness request/tokenizer; must equal huggingfaceId
+      shortName: qwen3-32b
+      path: models/Qwen/Qwen3-32B
+      huggingfaceId: Qwen/Qwen3-32B
       maxModelLen: 16384
       size: 2Gi
 
@@ -127,6 +127,8 @@ scenario:
     # =========================================================================
     decode:
       replicas: 1
+      accelerator:
+        count: 1                 # per-role accelerator count; backend overlays override (0 for CPU sims)
       parallelism:
         tensor: 1
         data: 1
@@ -150,6 +152,8 @@ scenario:
     prefill:
       enabled: true
       replicas: 1
+      accelerator:
+        count: 1                 # per-role accelerator count; backend overlays override (0 for CPU sims)
       parallelism:
         tensor: 1
         data: 1
@@ -268,12 +272,12 @@ scenario:
     storage:
       workloadPvc:
         accessModes:
-          - ReadWriteOnce
+          - ReadWriteMany
         storageClassName: auto
       modelPvc:
         size: 2Gi
         accessModes:
-          - ReadWriteOnce
+          - ReadWriteMany
         storageClassName: auto
 
     timeouts:

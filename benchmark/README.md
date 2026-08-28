@@ -38,7 +38,7 @@ benchmark/
     │           └── kv-early.yaml          # variant
     └── cluster-configs/      # swappable backend overlays (--cluster-config)
         ├── vllm.yaml         #   real vLLM, GPU
-        ├── vllm-sim.yaml     #   real vLLM (CPU) + latency-simulation plugin
+        ├── vllm-sim-qwen3-32b.yaml # real vLLM (CPU) + latency-simulation plugin (per-model)
         └── inference-sim.yaml#   llm-d-inference-sim
 ```
 
@@ -56,10 +56,11 @@ benchmark/
 | Backend (`--cluster-config`)     | Runtime                              | GPU | Metrics source        | Priority |
 |----------------------------------|--------------------------------------|-----|-----------------------|----------|
 | `cluster-configs/vllm.yaml`        | real vLLM                             | yes | native `vllm:` metrics | high     |
-| `cluster-configs/vllm-sim.yaml`    | real vLLM (CPU) + simulation plugin  | no  | native `vllm:` metrics | high     |
+| `cluster-configs/vllm-sim-qwen3-32b.yaml`    | real vLLM (CPU) + simulation plugin  | no  | native `vllm:` metrics | high     |
 | `cluster-configs/inference-sim.yaml`| llm-d-inference-sim (fake server)   | no  | native `vllm:` metrics | low      |
 
-`vllm` and `vllm-sim` are the priority pair. All three expose native `vllm:`
+`vllm` and `vllm-sim-*` are the priority pair (the `vllm-sim` overlay is
+per-model, e.g. `vllm-sim-qwen3-32b.yaml`). All three expose native `vllm:`
 metrics, so the scenario's scaling strategy applies unchanged across backends.
 
 > Note: `--cluster-config` is a single-use flag that upstream documents for
@@ -96,7 +97,7 @@ Run an experiment exactly like a guide, pointing `--spec` at its `.j2`:
 ```bash
 llmdbenchmark standup \
   --spec benchmark/config/specification/staging/pd-disaggregation/queue-aggressive.yaml.j2 \
-  --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml \
+  --cluster-config benchmark/config/cluster-configs/vllm-sim-qwen3-32b.yaml \
   -p <namespace>
 ```
 
@@ -162,19 +163,19 @@ Pick a specification (`guides/` or `staging/`) and a backend overlay. Run
 # Standup — vLLM-CPU-sim backend (no GPU)
 llmdbenchmark standup \
   --spec benchmark/config/specification/guides/pd-disaggregation.yaml.j2 \
-  --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml \
+  --cluster-config benchmark/config/cluster-configs/vllm-sim-qwen3-32b.yaml \
   -p <namespace>
 
 # Run
 llmdbenchmark run \
   --spec benchmark/config/specification/guides/pd-disaggregation.yaml.j2 \
-  --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml \
+  --cluster-config benchmark/config/cluster-configs/vllm-sim-qwen3-32b.yaml \
   -p <namespace> -l inference-perf -w guide_pd-disaggregation_1.yaml
 
 # Teardown
 llmdbenchmark teardown \
   --spec benchmark/config/specification/guides/pd-disaggregation.yaml.j2 \
-  --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml \
+  --cluster-config benchmark/config/cluster-configs/vllm-sim-qwen3-32b.yaml \
   -p <namespace>
 ```
 
@@ -191,7 +192,7 @@ spec + backend overlay compose as intended before touching a cluster:
 ```bash
 llmdbenchmark standup \
   --spec benchmark/config/specification/guides/pd-disaggregation.yaml.j2 \
-  --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml \
+  --cluster-config benchmark/config/cluster-configs/vllm-sim-qwen3-32b.yaml \
   -p bench --dry-run
 ```
 
@@ -216,8 +217,10 @@ Dry-run composition is confirmed for the three backend overlays. A live
 end-to-end run on a cluster (standup → workload → teardown) has not yet been
 exercised for these specs.
 
-## Observability (planned)
+## Observability
 
-Autoscaling-specific tooling — Grafana dashboards tuned for scaling observability
-(desired vs. current replicas, trigger metrics, scale events) and install
-helpers — is a planned addition under `benchmark/`. It is not yet included.
+Each run can get a standalone HTML summary (`report.html`) with the key
+lifecycle metrics and links to Grafana panels (vLLM KV-cache utilization,
+queue size) for that run's exact time window — including a permanent
+snapshot that survives Prometheus data retention. See
+[`docs/grafana-reports.md`](docs/grafana-reports.md).

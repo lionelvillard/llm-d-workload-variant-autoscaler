@@ -1,5 +1,5 @@
-# BACKEND OVERLAY — vLLM CPU + latency-simulation plugin (no GPU)
-# Apply with: --cluster-config benchmark/config/cluster-configs/vllm-sim.yaml
+# BACKEND OVERLAY — vLLM CPU + latency-simulation plugin (no GPU), Qwen3-32B on H100 SXM5
+# Apply with: --cluster-config benchmark/config/cluster-configs/vllm-sim-qwen3-32b.yaml
 #
 # Priority backend. Runs the real vLLM serving stack on CPU with the model
 # forward pass replaced by github.com/lionelvillard/vllm-simulated-model, so
@@ -11,8 +11,23 @@
 #     vLLM reads it with --load-format=dummy (no weight download).
 #   - SimulatedNixlConnector simulates P/D KV-transfer latency (no tensor move).
 #
-# Tokenizer note: `--tokenizer=facebook/opt-125m` downloads ~5 MB from
-# HuggingFace on first run; internet access required.
+# This overlay is model-specific: the config.json (architecture + physics latency
+# calibration) and the KV-cache sizing below are tuned for Qwen3-32B on H100 SXM5.
+# Copy this file and swap the config.json / sizing to model another model.
+#
+# Tokenizer note: `--tokenizer=Qwen/Qwen3-32B` downloads the tokenizer (~11 MB)
+# from HuggingFace on first run; internet access required (model is not gated).
+#
+# KV-cache sizing note: SimulatedForCausalLM builds real vLLM Attention layers, so
+# vLLM allocates a genuine KV cache. On CPU, vLLM ignores gpu_memory_utilization
+# and sizes the KV cache directly from VLLM_CPU_KVCACHE_SPACE (GiB) — model weights
+# are NOT loaded (dummy), so they do not consume it. To emulate an H100 80 GB card
+# serving Qwen3-32B we set it to (80 GB − weights):
+#   weights(bf16) = ~32.8 B params x 2 B ~= 65 GB  =>  KV ~= 80 - 65 = 15 GiB
+# (Real vLLM would also apply gpu_memory_utilization < 1.0 and subtract peak
+# activations, so live usable KV is somewhat lower; 15 GiB is an upper bound.)
+# Because this KV cache is real CPU RAM, the pod memory limit must exceed it:
+# 15 GiB KV + runtime/activation overhead => 20Gi.
 #
 # Merge note: dicts deep-merge, lists replace wholesale. This overlay never sets
 # `keda`.
@@ -24,7 +39,7 @@ affinity:
 
 accelerator:
   count: 0
-  memory: 24
+  memory: 80
 
 model:
   gpuMemoryUtilization: 0.5
@@ -40,10 +55,10 @@ decode:
     count: 0
   resources:
     limits:
-      memory: 8Gi
+      memory: 20Gi
       cpu: "4"
     requests:
-      memory: 8Gi
+      memory: 20Gi
       cpu: "4"
   initContainers:
     - name: install-plugin
@@ -60,7 +75,7 @@ decode:
     - name: PYTHONPATH
       value: "/plugins"
     - name: VLLM_CPU_KVCACHE_SPACE
-      value: "4"
+      value: "15"
     - name: VLLM_CPU_OMP_THREADS_BIND
       value: "0-3"
     - name: HF_HOME
@@ -81,11 +96,11 @@ decode:
   vllm:
     customCommand: >-
       vllm serve /model
-      --tokenizer=facebook/opt-125m
+      --tokenizer=Qwen/Qwen3-32B
       --load-format=dummy
       --max-model-len=8192
       --host=0.0.0.0
-      --served-model-name=facebook/opt-125m
+      --served-model-name=Qwen/Qwen3-32B
       --port=$VLLM_METRICS_PORT
       --gpu-memory-utilization=0.5
       --enforce-eager
@@ -100,10 +115,10 @@ prefill:
     count: 0
   resources:
     limits:
-      memory: 8Gi
+      memory: 20Gi
       cpu: "4"
     requests:
-      memory: 8Gi
+      memory: 20Gi
       cpu: "4"
   initContainers:
     - name: install-plugin
@@ -120,7 +135,7 @@ prefill:
     - name: PYTHONPATH
       value: "/plugins"
     - name: VLLM_CPU_KVCACHE_SPACE
-      value: "4"
+      value: "15"
     - name: VLLM_CPU_OMP_THREADS_BIND
       value: "0-3"
     - name: HF_HOME
@@ -141,11 +156,11 @@ prefill:
   vllm:
     customCommand: >-
       vllm serve /model
-      --tokenizer=facebook/opt-125m
+      --tokenizer=Qwen/Qwen3-32B
       --load-format=dummy
       --max-model-len=8192
       --host=0.0.0.0
-      --served-model-name=facebook/opt-125m
+      --served-model-name=Qwen/Qwen3-32B
       --port=$VLLM_INFERENCE_PORT
       --gpu-memory-utilization=0.5
       --enforce-eager
@@ -154,7 +169,8 @@ prefill:
       --kv-transfer-config
       '{"kv_connector":"SimulatedNixlConnector","kv_role":"kv_producer","kv_connector_extra_config":{"bandwidth_gbps":100,"handshake_ms":2}}'
 
-# SimulatedForCausalLM config.json (facebook/opt-125m). vLLM reads it from /model.
+# SimulatedForCausalLM config.json (Qwen3-32B, physics latency calibrated for
+# H100 SXM5). vLLM reads it from /model.
 extraObjects:
   - apiVersion: v1
     kind: ConfigMap
@@ -164,22 +180,26 @@ extraObjects:
       config.json: |
         {
           "architectures": ["SimulatedForCausalLM"],
-          "model_type": "opt",
-          "hidden_size": 768,
-          "num_hidden_layers": 12,
-          "num_attention_heads": 12,
-          "num_key_value_heads": 12,
-          "intermediate_size": 3072,
-          "vocab_size": 50272,
-          "max_position_embeddings": 2048,
-          "eos_token_id": 2,
-          "torch_dtype": "float16",
+          "model_type": "qwen3",
+          "hidden_size": 5120,
+          "num_hidden_layers": 64,
+          "num_attention_heads": 64,
+          "num_key_value_heads": 8,
+          "head_dim": 128,
+          "intermediate_size": 25600,
+          "vocab_size": 151936,
+          "max_position_embeddings": 40960,
+          "eos_token_id": 151645,
+          "torch_dtype": "bfloat16",
           "latency": {
-            "type": "linear",
-            "base_ms": 5.0,
-            "prefill_ms_per_token": 0.5,
-            "decode_ms_per_seq": 10.0,
-            "ctx_ms_per_ktoken": 0.1,
+            "type": "physics",
+            "hardware": {
+              "peak_tflops": 989.0,
+              "hbm_gbps": 3350.0,
+              "weight_dtype": "bfloat16"
+            },
+            "beta": [3.119229, 1.182904, 0.146612],
+            "tp": 1,
             "deterministic_length": true
           }
         }
