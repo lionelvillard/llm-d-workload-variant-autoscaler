@@ -15,7 +15,7 @@ base `defaults.yaml`). This directory:
 - **Reuses upstream by reference.** Each specification points `template_dir` and
   `values_file` at a sibling `../llm-d-benchmark` clone — nothing is vendored, so
   there is no drift.
-- **Extends it with autoscaling.** Scenarios layer recommended WVA/KEDA scaling
+- **Extends it with autoscaling.** Scenarios layer recommended KEDA scaling
   strategies on top of the upstream deployment topologies.
 - **Stages work in progress.** Unlike upstream (recommended only), this repo
   keeps both recommended configs (`guides/`) **and** experimental ones
